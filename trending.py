@@ -18,8 +18,11 @@ starting point for your own read, and big movers reverse often.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
 import statistics
+import time
 
 import chart_analysis as CA
 
@@ -27,6 +30,23 @@ MIN_PRICE = 3.0
 MIN_DOLLAR_VOL = 5_000_000      # 20-day median $ volume
 SHORTLIST = 60                  # chart reads per pass (cost control)
 TOP_N = 10
+READ_BUDGET_SECS = 45.0         # stop chart reads after this; the rest are
+                                # ranked on the cheap metrics alone
+STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
+                          "trending_stats.json")
+
+
+def history() -> dict | None:
+    """What the list did next historically (study_trending.py output)."""
+    try:
+        with open(STATS_PATH) as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    keep = ("n", "avg1", "avg5", "avg10", "up1", "up5", "up10")
+    return {"meta": {k: d.get("meta", {}).get(k) for k in ("from", "to", "symbols")},
+            **{k: {x: d[k].get(x) for x in keep} for k in ("up", "down", "base")
+               if k in d}}
 
 
 def _ema(xs: list[float], n: int) -> float | None:
@@ -135,17 +155,26 @@ def rating(sc: int) -> str:
 
 
 def build(cands: dict[str, tuple[dict, list[dict]]], spy: list[float] | None,
-          minutes: float | None, now=None) -> dict:
+          minutes: float | None, now=None,
+          budget: float = READ_BUDGET_SECS) -> dict:
     """cands: {symbol: (metrics, bars)} already filtered by is_candidate.
-    Returns {"up": [...], "down": [...]} — top 10 each, best first."""
+    Returns {"up": [...], "down": [...]} — top 10 each, best first.
+
+    Chart reads run strongest-first and stop when `budget` seconds are
+    used, so a slow server can't make the 15-minute pass run long."""
+    t0 = time.monotonic()
     short = sorted(cands.items(), key=lambda kv: prelim_score(kv[1][0]),
                    reverse=True)[:SHORTLIST]
     rows = []
+    read = 0
     for sym, (m, bars) in short:
-        try:
-            rep = CA.analyze(bars, spy_closes=spy, now=now)
-        except Exception:  # noqa: BLE001 - one bad chart never stops the list
-            rep = None
+        rep = None
+        if time.monotonic() - t0 < budget:
+            try:
+                rep = CA.analyze(bars, spy_closes=spy, now=now)
+                read += 1
+            except Exception:  # noqa: BLE001 - one bad chart never stops the list
+                rep = None
         summ = rep["summary"] if rep else None
         sc, why = score(m, summ)
         up = m["pct"] >= 0
@@ -177,4 +206,6 @@ def build(cands: dict[str, tuple[dict, list[dict]]], spy: list[float] | None,
     rows.sort(key=lambda r: r["score"], reverse=True)
     return {"up": [r for r in rows if r["dir"] == "up"][:TOP_N],
             "down": [r for r in rows if r["dir"] == "down"][:TOP_N],
-            "candidates": len(cands), "analyzed": len(short)}
+            "candidates": len(cands), "analyzed": read,
+            "build_secs": round(time.monotonic() - t0, 1),
+            "history": history()}

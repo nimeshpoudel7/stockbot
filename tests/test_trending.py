@@ -67,3 +67,29 @@ class TestTrending(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTrendingCostAndHistory(unittest.TestCase):
+    def test_zero_budget_skips_chart_reads_but_still_ranks(self):
+        b = _mover()
+        out = trending.build({"UPA": (trending.mover_metrics(b, None), b)}, None, None, budget=0)
+        self.assertEqual(out["analyzed"], 0)
+        self.assertEqual([r["symbol"] for r in out["up"]], ["UPA"])
+        self.assertIsNone(out["up"][0]["bias"])
+
+    def test_history_shipped_and_attached(self):
+        h = trending.history()
+        self.assertGreater(h["base"]["n"] if "n" in h["base"] else 1, 0)
+        for k in ("up", "down", "base"):
+            self.assertIn("avg5", h[k])
+        b = _mover()
+        out = trending.build({"UPA": (trending.mover_metrics(b, None), b)}, None, None)
+        self.assertIn("history", out)
+        self.assertIn("build_secs", out)
+
+    def test_heartbeat_records_pass_duration(self):
+        store = Store(":memory:")
+        _run(store, {"MOVE": _mover()})
+        last = json.loads(store.poller_get(scanner.SCAN_WATCH_LAST_KEY))
+        self.assertIsInstance(last["secs"], float)
+        self.assertIsInstance(last["trending_secs"], float)

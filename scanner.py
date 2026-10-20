@@ -1374,6 +1374,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     if not _in_market_hours(store):
         log.info("watch: outside market hours — skipping quietly")
         return []
+    t_start = time.monotonic()
 
     universe = get_universe(store, rest)
     seen = _load_seen(store)
@@ -1509,23 +1510,37 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         if dry_run:
             print("(no new setups)")
     if not dry_run:
-        _persist_watch_last(store, screened, len(fresh), push_ok)
-        _persist_trending(store, movers, spy, minutes)
+        t_trend = _persist_trending(store, movers, spy, minutes)
+        secs = time.monotonic() - t_start
+        log.info("watch: pass took %.0fs (trending %.0fs, %d movers)",
+                 secs, t_trend, len(movers))
+        if secs > WATCH_SLOW_SECS:
+            log.warning("watch: pass took %.0fs — over %ds of the %d-minute "
+                        "slot", secs, WATCH_SLOW_SECS, WATCH_INTERVAL_MIN)
+        _persist_watch_last(store, screened, len(fresh), push_ok,
+                            secs=secs, trending_secs=t_trend)
     return fresh
 
 
-def _persist_trending(store: Store, movers: dict, spy, minutes) -> None:
-    """Rebuild the Top-10 trending lists from this pass (best-effort)."""
+WATCH_SLOW_SECS = 300   # a pass longer than 5 min gets a warning in the log
+
+
+def _persist_trending(store: Store, movers: dict, spy, minutes) -> float:
+    """Rebuild the Top-10 trending lists from this pass (best-effort).
+    Returns the seconds it took."""
+    t0 = time.monotonic()
     try:
         res = trending.build(movers, spy, minutes)
         res.update({"ts": _et_now().isoformat(), "date": _et_today_str()})
         store.poller_set(SCAN_TRENDING_KEY, json.dumps(res))
     except Exception as e:  # noqa: BLE001
         log.warning("watch: could not build trending list: %s", e)
+    return time.monotonic() - t0
 
 
 def _persist_watch_last(store: Store, screened: int, new: int,
-                        push_ok: bool | None) -> None:
+                        push_ok: bool | None, secs: float | None = None,
+                        trending_secs: float | None = None) -> None:
     """Heartbeat for the dashboard: when the 15-minute pass last ran, how
     many stocks it screened and what it found — written on EVERY pass,
     including the quiet ones that find nothing (those used to leave no
@@ -1533,7 +1548,9 @@ def _persist_watch_last(store: Store, screened: int, new: int,
     try:
         store.poller_set(SCAN_WATCH_LAST_KEY, json.dumps({
             "ts": _et_now().isoformat(), "screened": screened, "new": new,
-            "push_ok": push_ok, "interval_min": WATCH_INTERVAL_MIN}))
+            "push_ok": push_ok, "interval_min": WATCH_INTERVAL_MIN,
+            "secs": round(secs, 1) if secs is not None else None,
+            "trending_secs": round(trending_secs, 1) if trending_secs is not None else None}))
     except Exception as e:  # noqa: BLE001 - heartbeat is best-effort
         log.warning("watch: could not record last-run time: %s", e)
 

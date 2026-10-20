@@ -168,35 +168,52 @@ def _load() -> dict:
 
 
 def history(f: dict) -> dict | None:
-    """{n, up10, avg10, base_up10, base_avg10, edge} or None if thin/missing."""
+    """Direction-adjusted history, or None if thin/missing.
+
+    For a bullish finding "worked" means higher 10 sessions later; for a
+    bearish one, LOWER — so a bearish sign that was followed by a bounce
+    shows up as a miss, not as green numbers. hit/base_hit are those
+    rates; edge10 = (avg move in the finding's direction) minus (the same
+    for any day). Neutral findings keep the raw up-rate and move.
+    """
     data = _load()
     st = (data.get("stats") or {}).get(finding_key(f))
     base = data.get("base") or {}
     if not st or st.get("n", 0) < MIN_N or not base:
         return None
-    return {"n": st["n"], "up5": st["up5"], "up10": st["up10"],
-            "avg5": st["avg5"], "avg10": st["avg10"], "med10": st.get("med10"),
-            "base_up10": base.get("up10"), "base_avg10": base.get("avg10"),
-            "edge10": round(st["avg10"] - (base.get("avg10") or 0), 2)}
+    sgn = -1 if f.get("bias") == "bear" else 1
+    hit = st["up10"] if sgn > 0 else 100 - st["up10"]
+    base_hit = base.get("up10", 50) if sgn > 0 else 100 - base.get("up10", 50)
+    return {"n": st["n"], "dir": "down" if sgn < 0 else "up",
+            "hit": round(hit, 1), "base_hit": round(base_hit, 1),
+            "avg10": st["avg10"], "base_avg10": base.get("avg10"),
+            "up10": st["up10"], "base_up10": base.get("up10"),
+            "edge10": round(sgn * (st["avg10"] - (base.get("avg10") or 0)), 2)}
 
 
 def history_text(h: dict, bias: str = "neutral") -> str:
     edge = h["edge10"]
-    base = (f"In {h['n']:,} past cases the stock was higher 10 trading days later "
-            f"{h['up10']:.0f}% of the time (any day: {h['base_up10']:.0f}%), average move "
-            f"{h['avg10']:+.1f}% (any day: {h['base_avg10']:+.1f}%).")
-    if abs(edge) < 0.3:
-        verdict = " About the same as a random day, so this alone gave no real edge."
-    elif bias == "bull":
-        verdict = (" Better than a random day, so it helped a little." if edge > 0 else
-                   " Worse than a random day, so on its own it did not help here.")
-    elif bias == "bear":
-        verdict = (" Weaker than a random day, so the warning helped a little." if edge < 0 else
-                   " Stronger than a random day: this warning usually failed and the stock "
-                   "bounced, which is common in a rising market.")
+    if bias in ("bull", "bear"):
+        word = "higher" if bias == "bull" else "lower"
+        txt = (f"In {h['n']:,} past cases the stock was {word} 10 trading days later "
+               f"{h['hit']:.0f}% of the time, vs {h['base_hit']:.0f}% on any day. "
+               f"Average move {h['avg10']:+.1f}% (any day {h['base_avg10']:+.1f}%).")
     else:
-        verdict = (" Better than a random day." if edge > 0 else " Worse than a random day.")
-    return base + verdict
+        txt = (f"In {h['n']:,} past cases the stock was higher 10 trading days later "
+               f"{h['up10']:.0f}% of the time (any day {h['base_up10']:.0f}%), average "
+               f"move {h['avg10']:+.1f}% (any day {h['base_avg10']:+.1f}%).")
+    if abs(edge) < 0.3:
+        verdict = " No real edge: about the same as a random day."
+    elif bias == "bull":
+        verdict = (" A small edge in its favour." if edge > 0 else
+                   " It did worse than a random day here, so don't lean on it.")
+    elif bias == "bear":
+        verdict = (" A small edge: the warning helped." if edge > 0 else
+                   " The warning usually failed here: stocks tended to bounce instead, "
+                   "common in a rising market.")
+    else:
+        verdict = " Better than a random day." if edge > 0 else " Worse than a random day."
+    return txt + verdict
 
 
 def annotate(sections) -> None:

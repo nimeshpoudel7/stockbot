@@ -39,7 +39,8 @@ class TestOutlook(unittest.TestCase):
             f = {"name": "RSI (14)", "bias": "bull", "status": "28", "active": True}
             P.annotate([{"items": [f]}])
         self.assertEqual(f["odds"]["edge10"], 1.0)
-        self.assertIn("helped a little", f["odds_text"])
+        self.assertIn("edge in its favour", f["odds_text"])
+        self.assertEqual((f["odds"]["hit"], f["odds"]["base_hit"]), (58.0, 52.0))
         self.assertIn("58%", f["odds_text"])
 
     def test_bear_warning_that_failed_says_so(self):
@@ -48,6 +49,18 @@ class TestOutlook(unittest.TestCase):
             f = {"name": "Volume climax", "bias": "bear", "status": "x", "active": True}
             P.annotate([{"items": [f]}])
         self.assertIn("usually failed", f["odds_text"])
+        # direction-adjusted: a bearish sign is scored on how often it FELL
+        self.assertEqual((f["odds"]["hit"], f["odds"]["base_hit"]), (42.0, 48.0))
+        self.assertLess(f["odds"]["edge10"], 0)
+        self.assertIn("lower 10 trading days later 42%", f["odds_text"])
+
+    def test_bear_warning_that_worked(self):
+        _stats(self.path, "Double top|bear|Confirmed", up10=45.0, avg10=-0.6)
+        with patch.object(P, "STATS_PATH", self.path):
+            f = {"name": "Double top", "bias": "bear", "status": "Confirmed", "active": True}
+            P.annotate([{"items": [f]}])
+        self.assertEqual(f["odds"]["edge10"], 1.0)
+        self.assertIn("the warning helped", f["odds_text"])
 
     def test_thin_samples_and_missing_file_hidden(self):
         _stats(self.path, "RSI (14)|bull", n=12)
