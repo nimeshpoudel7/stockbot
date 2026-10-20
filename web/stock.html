@@ -118,6 +118,26 @@
 .fd-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .fd-n{font-weight:500}
 .fd-d{font-size:.88rem;color:var(--ink-2);margin-top:4px;max-width:72ch}
+.fd-next{margin-top:8px;padding:9px 12px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line-soft);font-size:.86rem;max-width:72ch}
+.fd-next .k{display:block;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);margin-bottom:3px}
+.fd-next p{margin:0;color:var(--ink-2)}
+.fd-next p + p{margin-top:6px}
+.odds{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;margin-top:8px;font-size:.8rem;color:var(--mute)}
+.odds .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;position:relative}
+.odds .bar i{display:block;height:100%}
+.odds b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.upd{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:var(--mute)}
+.upd .dot{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.upd.live .dot{background:var(--buy);box-shadow:0 0 0 3px var(--buy-bg)}
+.panel-h .upd{margin-left:auto}
+.scan-diff{margin-top:14px;padding:12px 14px;border-radius:var(--radius);border:1px solid var(--line-soft);background:var(--panel-2);font-size:.88rem;color:var(--ink-2)}
+.scan-diff h3{font-size:.9rem;margin:0 0 6px;color:var(--ink)}
+.scan-diff table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.84rem}
+.scan-diff th,.scan-diff td{padding:5px 6px;text-align:left;border-bottom:1px solid var(--line-soft)}
+.scan-diff th{font-weight:500;color:var(--mute)}
+.scan-diff td.num{font-variant-numeric:tabular-nums}
+.hero .last.flash{animation:flash 1s ease}
+@keyframes flash{from{background:var(--amber-soft)}to{background:transparent}}
 details.checked{margin-top:12px;font-size:.86rem}
 details.checked summary{cursor:pointer;color:var(--mute)}
 details.checked ul{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px}
@@ -164,7 +184,7 @@ details.checked li b{color:var(--ink-2);font-weight:500}
   <div class="layout">
     <div class="col">
       <section class="panel" aria-labelledby="vTitle">
-        <div class="panel-h"><h2 id="vTitle">Scanner verdict</h2></div>
+        <div class="panel-h" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 id="vTitle">Scanner verdict</h2><span class="upd" id="vUpd"></span></div>
         <div class="panel-b" id="verdictCard"><div class="skeleton"></div></div>
       </section>
 
@@ -199,7 +219,7 @@ details.checked li b{color:var(--ink-2);font-weight:500}
       </section>
 
       <section class="panel" aria-labelledby="rdTitle" id="readPanel">
-        <div class="panel-h"><h2 id="rdTitle">Chart reading</h2>
+        <div class="panel-h"><h2 id="rdTitle">Chart reading <span class="upd" id="rdUpd" style="vertical-align:middle;margin-left:8px"></span></h2>
           <p class="mute small">Every technique from the chart-reading playbook, checked on this stock: trend, levels, gaps, candles, patterns, volume, indicators, liquidity and context. It describes the chart; the scanner verdict above is the tested signal.</p></div>
         <div class="panel-b">
           <div id="readSum"><div class="skeleton"></div></div>
@@ -418,8 +438,15 @@ async function drawChart() {
 // ---------------------------------------------------------------- chart reading
 let readTab = null;
 const pillCls = b => b === 'bull' ? 'good' : b === 'bear' ? 'bad' : '';
+function oddsHtml(o) {
+  const row = (lbl, v, col) => `<span>${lbl}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></i></span><b>${v.toFixed(0)}%</b>`;
+  return `<div class="odds" aria-label="Higher 10 days later: ${o.up10.toFixed(0)}% after this, ${o.base_up10.toFixed(0)}% on any day">
+    ${row('After this', o.up10, o.edge10 >= 0.3 ? 'var(--buy)' : o.edge10 <= -0.3 ? 'var(--sell)' : 'var(--amber)')}${row('Any day', o.base_up10, 'var(--mute)')}</div>`;
+}
 function fdHtml(f) {
-  return `<li class="fd"><div class="fd-h"><span class="fd-n">${esc(f.name)}</span><span class="pill ${pillCls(f.bias)}">${esc(f.status)}</span></div><p class="fd-d">${esc(f.detail)}</p></li>`;
+  const next = f.next || f.odds_text
+    ? `<div class="fd-next"><span class="k">What usually happens next</span>${f.next ? `<p>${esc(f.next)}</p>` : ''}${f.odds_text ? `<p>${esc(f.odds_text)}</p>${oddsHtml(f.odds)}` : ''}</div>` : '';
+  return `<li class="fd"><div class="fd-h"><span class="fd-n">${esc(f.name)}</span><span class="pill ${pillCls(f.bias)}">${esc(f.status)}</span></div><p class="fd-d">${esc(f.detail)}</p>${next}</li>`;
 }
 function renderReadSummary() {
   const S = AN.summary;
@@ -492,15 +519,48 @@ function renderRisk() {
   ['rpAcct', 'rpRisk', 'rpEntry', 'rpStop', 'rpStopSel', 'rpTgtSel'].forEach(id => $(id).addEventListener('input', calc));
   calc();
 }
-async function loadAnalysis() {
-  try { AN = await api('GET', '/api/analysis/' + encodeURIComponent(SYM)); }
-  catch (e) { $('readSum').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
-  renderReadSummary(); renderReadTabs(); applyLayers();
+function updStamp(id, ts, live) {
+  const el = $(id); if (!el || !ts) return;
+  el.className = 'upd' + (live ? ' live' : '');
+  el.innerHTML = `<span class="dot" aria-hidden="true"></span>${live ? 'Live · ' : ''}updated ${new Date(ts * 1000).toLocaleTimeString('en-US', {timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', second: '2-digit'})} ET`;
+}
+async function loadAnalysis(quiet) {
+  let a;
+  try { a = await api('GET', '/api/analysis/' + encodeURIComponent(SYM)); }
+  catch (e) { if (!quiet) $('readSum').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  AN = a;
+  const keepRisk = quiet && readTab === 'risk';   // don't wipe what the user typed
+  renderReadSummary(); if (!keepRisk) renderReadTabs(); applyLayers();
+  updStamp('rdUpd', AN.updated, AN.live && marketOpenNow());
 }
 
-function renderVerdict(v, price) {
+function scanDiffHtml(ref, v, price) {
+  if (!ref) return '';
+  const sideNow = v ? v.side : null;
+  const scoreNow = v ? (v.side === 'BUY' ? v.tech_score : v.bear_score) : null;
+  const pbTxt = (side, pb) => side === 'SELL' ? 'Sell' : side === 'BUY' ? 'Buy' + (PLAYBOOK[pb] ? ' · ' + PLAYBOOK[pb] : '') : '—';
+  const same = ref.side === sideNow && ref.playbook == (v && v.playbook) && Math.abs((ref.score || 0) - (scoreNow || 0)) < 5;
+  const when = ref.kind === 'morning'
+    ? `the <b>8:00 AM morning scan</b> (${etTime(ref.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'})} ET), which uses yesterday's close`
+    : `the <b>15-minute check</b> at ${etTime(ref.ts, {hour: 'numeric', minute: '2-digit'})} ET`;
+  const rsi = x => x == null ? '—' : x.toFixed(0);
+  return `<div class="scan-diff"><h3>${same ? 'Matches the Today list' : 'Why this differs from the Today list'}</h3>
+    <p>The Today list shows ${when}. This verdict is <b>recalculated live</b> with today's price, so it moves during the day. ${same ? 'Right now they agree.' : 'The list keeps its snapshot so you can see what was flagged and when.'}</p>
+    <table><thead><tr><th></th><th>Today list</th><th>Live now</th></tr></thead><tbody>
+      <tr><td>Signal</td><td>${pbTxt(ref.side, ref.playbook)}</td><td>${v ? pbTxt(sideNow, v.playbook) : '—'}</td></tr>
+      <tr><td>Rating</td><td class="num">${esc(ref.rating || '—')}</td><td class="num">${v ? esc(v.rating) : '—'}</td></tr>
+      <tr><td>Score</td><td class="num">${ref.score ?? '—'}</td><td class="num">${scoreNow ?? '—'}</td></tr>
+      <tr><td>Price</td><td class="num">${fmtP(ref.price)}</td><td class="num">${fmtP(price)}</td></tr>
+      <tr><td>RSI 14</td><td class="num">${rsi(ref.rsi)}</td><td class="num">${rsi(v && v.rsi)}</td></tr>
+    </tbody></table>
+    ${!same && ref.side === 'BUY' && ref.playbook === 'dip' && v && v.rsi != null && ref.rsi != null && v.rsi > ref.rsi + 3
+      ? '<p>The dip setup scores oversold readings. As the price recovers, RSI rises and those points drop off. That is the bounce the dip buy was looking for, not a new warning.</p>' : ''}
+    ${!same && price && ref.price ? `<p>Price has moved ${fmtPct((price - ref.price) / ref.price * 100, 1)} since the list was made.</p>` : ''}
+  </div>`;
+}
+function renderVerdict(v, price, ref) {
   const box = $('verdictCard');
-  if (!v) { box.innerHTML = '<p class="mute">Not enough daily history to run the technical screen on this stock yet.</p>'; return; }
+  if (!v) { box.innerHTML = '<p class="mute">Not enough daily history to run the technical screen on this stock yet.</p>' + scanDiffHtml(ref, v, price); return; }
   const score = v.side === 'BUY' ? v.tech_score : v.bear_score;
   const pb = v.side === 'BUY' && v.playbook ? (v.playbook === 'dip' ? 'a dip-buy' : 'a momentum') : (v.side === 'SELL' ? 'a sell-the-rally' : 'a');
   const reaches = v.push_bar != null && score >= v.push_bar;
@@ -515,7 +575,7 @@ function renderVerdict(v, price) {
     ? `<p class="counter">Pulling the other way: ${v.counter_setups.map(s => esc(s.reason)).join('; ')}.</p>` : '';
   const risk = score > 0 && v.stop != null ? `<div class="verdict-risk"><div class="mute small" style="margin-bottom:8px">If you take it: a stop at 2× the normal daily range, a target at 3×.</div>${ladder(price, v.stop, v.target)}</div>` : '';
   box.innerHTML = `<div class="verdict-top">${sideBadge(v.side, v.playbook)}<span class="spacer"></span>${meter(v.rating, v.side)}</div>
-    <p class="verdict-sum">${summary}</p>${setups}${notesHtml}${counter}${risk}`;
+    <p class="verdict-sum">${summary}</p>${setups}${notesHtml}${counter}${risk}${scanDiffHtml(ref, v, price)}`;
 }
 
 function renderLevels(L, last) {
@@ -582,6 +642,49 @@ function renderSent(s) {
   $('sentCard').innerHTML = news + an;
 }
 
+function paintPrice(last, dp, live) {
+  const el = $('hPrice'), txt = fmtP(last);
+  if (el.textContent !== txt) { el.textContent = txt; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+  $('hDay').innerHTML = (dp == null ? '' : `<span class="${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</span>`)
+    + (live ? (marketOpenNow() ? ' <span class="pill good">Live</span>' : '') : ' <span class="pill">Last close</span>');
+}
+// Last candle on the chart follows the live price (daily views and 1D).
+function tickChart(price, tsSec) {
+  if (!CH || !BARS || !BARS.length || price == null) return;
+  const last = BARS[BARS.length - 1];
+  const sameDay = new Date(last.time * 1000).toLocaleDateString('en-US', {timeZone: 'America/New_York'})
+    === new Date(tsSec * 1000).toLocaleDateString('en-US', {timeZone: 'America/New_York'});
+  if (!sameDay) return;
+  const b = Object.assign({}, last, {close: price, high: Math.max(last.high, price), low: Math.min(last.low, price)});
+  BARS[BARS.length - 1] = b;
+  try { CH.series.update(b); } catch (e) {}
+}
+async function pollPrice() {
+  if (document.hidden || !SYM) return;
+  let r;
+  try { r = await api('GET', '/api/prices?symbols=' + encodeURIComponent(SYM)); } catch (e) { return; }
+  const q = r && r[SYM];
+  if (!q || q.price == null) return;
+  paintPrice(q.price, q.day_pct, true);
+  tickChart(q.price, q.ts || Date.now() / 1000);
+}
+
+let STOCK = null;
+function renderStock(d) {
+  STOCK = d;
+  const p = d.price;
+  paintPrice(p.last, p.day_pct, p.live);
+  renderVerdict(d.scanner, p.last, d.scan_ref);
+  renderLevels(d.levels || {}, p.last);
+  renderTiles(d.levels || {});
+  updStamp('vUpd', d.updated, p.live && marketOpenNow());
+}
+async function refreshLive() {
+  if (document.hidden || !SYM || !marketOpenNow()) return;
+  try { renderStock(await api('GET', '/api/stock/' + encodeURIComponent(SYM))); } catch (e) { return; }
+  loadAnalysis(true);
+}
+
 async function load() {
   document.title = SYM ? SYM + ' — Stockbot' : 'Stock — Stockbot';
   if (!SYM) { $('hName').textContent = 'No stock chosen. Go back and tap a symbol.'; return; }
@@ -592,9 +695,6 @@ async function load() {
   const p = d.price, co = d.company || {}, st = d.stats || {};
   $('hName').textContent = co.name && co.name.toUpperCase() !== SYM ? co.name : '';
   $('hSub').textContent = [co.industry || co.sector, co.exchange].filter(Boolean).join(', ');
-  $('hPrice').textContent = fmtP(p.last);
-  const dp = p.day_pct;
-  $('hDay').innerHTML = (dp == null ? '' : `<span class="${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</span>`) + (p.live ? '' : ' <span class="pill">Last close</span>');
   if (st.as_of) $('asOf').textContent = 'Daily data as of ' + new Date(st.as_of * 1000).toLocaleDateString('en-US', {timeZone: 'America/New_York', month: 'short', day: 'numeric'});
   if (st.low_52w != null && st.high_52w != null) {
     $('stats').hidden = false;
@@ -605,13 +705,14 @@ async function load() {
     $('sCap').textContent = fmtCap(co.market_cap_musd);
     $('sVol').textContent = fmtBig(st.avg_dollar_volume_20d);
   }
-  renderVerdict(d.scanner, p.last);
-  renderLevels(d.levels || {}, p.last);
-  renderTiles(d.levels || {});
+  renderStock(d);
   renderFund(d.fundamentals, p.last);
   renderSent(d.sentiment || {});
   drawChart();
   loadAnalysis();
+  setInterval(pollPrice, 5000);       // header + last candle
+  setInterval(refreshLive, 60000);    // verdict, levels, indicators, patterns
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { pollPrice(); refreshLive(); } });
 }
 load();
 </script>

@@ -56,6 +56,30 @@
   .list-foot{padding:12px 14px 14px}
 }
 
+.picks-h .seg{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none}
+.picks-h .seg::-webkit-scrollbar{display:none}
+.picks-h .seg button{white-space:nowrap}
+.pick-tools{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:flex-end;padding:0 18px 14px}
+.pick-tools .search{flex:1 1 200px;display:flex;align-items:center;gap:8px;min-height:38px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+.pick-tools .search svg{width:16px;height:16px;color:var(--mute);flex:none}
+.pick-tools .search input{border:0;background:none;outline:none;min-height:36px;padding:0;flex:1;min-width:0;color:var(--ink);font:inherit;font-size:.92rem}
+.pick-tools .search:focus-within{border-color:var(--amber)}
+.pick-tools .sel{display:flex;flex-direction:column;gap:3px;font-size:.74rem;color:var(--mute)}
+.pick-tools .sel select{min-height:38px;padding:0 8px;font-size:.88rem}
+@media (max-width:760px){.pick-tools{padding:0 14px 12px}.pick-tools .search{flex-basis:100%}.pick-tools .sel{flex:1 1 calc(50% - 10px)}.pick-tools .sel select{width:100%}}
+.livepx{display:flex;flex-direction:column;gap:1px;font-size:.8rem}
+.livepx .since{color:var(--mute)}
+.livepx .flash{animation:flash 1s ease}
+@keyframes flash{from{background:var(--amber-soft)}to{background:transparent}}
+.heat{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;border-radius:6px;padding:2px 8px}
+.heat.hot{background:var(--sell-bg);color:var(--sell)}
+.heat.hot.up{background:var(--buy-bg);color:var(--buy)}
+.heat.strong{background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
+.heat.active{color:var(--ink-2);border:1px solid var(--line-soft)}
+.heat .sc{font-variant-numeric:tabular-nums;font-weight:500;color:var(--mute)}
+.chip.find{border-style:dashed}
+.trend-note{font-size:.82rem;color:var(--mute);padding:10px 18px;border-top:1px solid var(--line-soft)}
+
 /* watchlist */
 .wl-form{display:flex;gap:8px;padding:0 16px 12px}
 .wl-form input{text-transform:uppercase}
@@ -63,7 +87,12 @@
 .wl li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:9px 10px 9px 16px;border-bottom:1px solid var(--line-soft)}
 .wl li:last-child{border-bottom:0}
 .wl li.on{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--amber)}
-.wl .pick-btn{appearance:none;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;display:flex;flex-direction:column;padding:0;min-width:0}
+.wl li{grid-template-columns:minmax(0,1fr) auto auto auto}
+.wl .sym-link{display:flex;flex-direction:column;padding:4px 0;min-width:0;text-decoration:none;color:inherit}
+.wl .sym-link:hover .tick{text-decoration:underline;text-underline-offset:3px}
+.wl .chart-btn{opacity:.7}
+.wl li.on .chart-btn{opacity:1;color:var(--amber-text)}
+.wl .chart-btn svg{width:16px;height:16px;display:block}
 .wl .pick-btn .tick{font-size:1.02rem}
 .wl .px{text-align:right;line-height:1.25}
 .wl .px b{font-weight:500;display:block}
@@ -152,7 +181,34 @@ details.more[open] summary{margin-bottom:14px}
           <button type="button" data-pick="buys" aria-pressed="true">Buy <span class="count" id="cBuys"></span></button>
           <button type="button" data-pick="sells" aria-pressed="false">Sell <span class="count" id="cSells"></span></button>
           <button type="button" data-pick="live" aria-pressed="false">Live today <span class="count" id="cLive"></span></button>
+          <button type="button" data-pick="trend" aria-pressed="false">Trending <span class="count" id="cTrend"></span></button>
         </div>
+      </div>
+      <div class="pick-tools" id="pickTools">
+        <label class="search"><span class="sr-only">Search picks</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+          <input id="pickSearch" type="search" placeholder="Search symbol or setup" autocomplete="off" spellcheck="false"></label>
+        <label class="sel"><span>Sort</span><select id="pickSort">
+          <option value="score">Score, high to low</option>
+          <option value="move">Biggest move today</option>
+          <option value="since">Best since the scan</option>
+          <option value="newest">Newest first</option>
+          <option value="price_d">Price, high to low</option>
+          <option value="price_a">Price, low to high</option>
+          <option value="sym">Symbol A to Z</option>
+        </select></label>
+        <label class="sel" id="fSideWrap"><span>Side</span><select id="fSide">
+          <option value="">All</option><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
+        <label class="sel" id="fDirWrap" hidden><span>Direction</span><select id="fDir">
+          <option value="up">Moving up</option><option value="down">Moving down</option></select></label>
+        <label class="sel" id="fSetupWrap"><span>Setup</span><select id="fSetup">
+          <option value="">Any</option><option value="dip">Dip buy</option><option value="momentum">Momentum</option></select></label>
+        <label class="sel"><span>Price</span><select id="fPrice">
+          <option value="">Any</option><option value="u10">Under $10</option><option value="10_50">$10 to $50</option>
+          <option value="50_200">$50 to $200</option><option value="o200">Over $200</option></select></label>
+        <label class="sel"><span>Min score</span><select id="fScore">
+          <option value="0">Any</option><option value="5">5+</option><option value="6">6+</option><option value="7">7+</option><option value="8">8+</option></select></label>
+        <button class="btn btn-quiet btn-s" type="button" id="fReset" hidden>Clear</button>
       </div>
       <div class="live-status" id="liveStatus" hidden></div>
       <ul class="pick-list" id="pickList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
@@ -299,16 +355,7 @@ async function loadRegime() {
 }
 
 // ------------------------------------------------------------------ picks
-let SCAN = {morning: null, watch: null}, pickTab = 'buys', showAll = false;
-// Is the US market open right now (Mon-Fri 9:30-16:00 ET)? Holidays are not
-// known here; the scanner itself skips them.
-function marketOpenNow() {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short',
-    hour: 'numeric', minute: 'numeric', hour12: false}).formatToParts(new Date()).map(x => [x.type, x.value]));
-  if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
-  const m = (+p.hour % 24) * 60 + (+p.minute);
-  return m >= 570 && m < 960;
-}
+let SCAN = {morning: null, watch: null, trending: null}, pickTab = 'buys', showAll = false;
 function renderLiveStatus() {
   const box = $('liveStatus');
   box.hidden = pickTab !== 'live';
@@ -339,57 +386,178 @@ function renderLiveStatus() {
   box.className = 'live-status ' + cls;
   box.innerHTML = `<span class="dot" aria-hidden="true"></span><span>${html}</span>`;
 }
+// ---- live prices for whatever the picks list shows (polled every 15s) ----
+let LIVEP = {}, livepSyms = '';
+async function refreshPickPrices() {
+  const syms = [...new Set(currentRows().map(c => c.symbol))].slice(0, 300);
+  if (!syms.length || document.hidden) return;
+  try { Object.assign(LIVEP, await api('GET', '/api/prices?symbols=' + syms.join(','))); } catch (e) { return; }
+  paintLivePrices();
+}
+function livePxHtml(c) {
+  const q = LIVEP[c.symbol];
+  if (!q || q.price == null) return `<span class="price num">${fmtP(c.price)}</span>`;
+  const since = c.price ? (q.price - c.price) / c.price * 100 : null;
+  return `<span class="price num">${fmtP(q.price)}</span><span class="livepx">
+    <span class="chg ${(q.day_pct || 0) >= 0 ? 'up' : 'down'}">${fmtPct(q.day_pct, 2)} today</span>
+    ${since == null ? '' : `<span class="since" title="Scanned at ${fmtP(c.price)}">${fmtPct(since, 1)} since scan</span>`}</span>`;
+}
+function paintLivePrices() {
+  document.querySelectorAll('[data-px]').forEach(el => {
+    const c = ROWS_BY_SYM[el.dataset.px];
+    if (!c) return;
+    const html = livePxHtml(c);
+    if (el.innerHTML !== html) { el.innerHTML = html; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+  });
+}
+
+// ---- rows, search, sort, filters ----------------------------------------
+const PREF_KEY = 'sb-pick-prefs';
+let PREFS = {sort: 'score', side: '', dir: 'up', setup: '', price: '', score: '0', q: ''};
+try { Object.assign(PREFS, JSON.parse(localStorage.getItem(PREF_KEY) || '{}'), {q: ''}); } catch (e) {}
+let ROWS_BY_SYM = {};
+const scoreOf = c => { const v = parseFloat(c.rating); return isNaN(v) ? (c.score != null ? c.score / 10 : (c.tech_score || 0) / 10) : v; };
+const dayPctOf = c => { const q = LIVEP[c.symbol]; return q && q.day_pct != null ? q.day_pct : (c.pct != null ? c.pct : null); };
+const sinceOf = c => { const q = LIVEP[c.symbol]; return q && q.price != null && c.price ? (q.price - c.price) / c.price * 100 * (c.side === 'SELL' || c.dir === 'down' ? -1 : 1) : null; };
+function baseRows() {
+  const m = SCAN.morning, w = SCAN.watch, t = SCAN.trending;
+  if (pickTab === 'live') return ((w && w.entries) || []).map((c, i) => Object.assign({_i: i}, c));
+  if (pickTab === 'trend') return (t && t[PREFS.dir === 'down' ? 'down' : 'up']) || [];
+  const all = pickTab === 'buys' ? ((m && m.buys) || []) : ((m && m.sells) || []);
+  const top = all.filter(c => c.top_pick);
+  const side = pickTab === 'buys' ? 'BUY' : 'SELL';
+  return (showAll || !top.length || filtersOn() ? all : top).map((c, i) => Object.assign({side, _i: i}, c));
+}
+function filtersOn() { return !!(PREFS.q || PREFS.setup || PREFS.price || +PREFS.score || (pickTab === 'live' && PREFS.side)); }
+function currentRows() {
+  const q = PREFS.q.trim().toUpperCase();
+  let rows = baseRows().filter(c => {
+    if (q) {
+      const hay = (c.symbol + ' ' + (c.reasons || []).join(' ') + ' ' + (c.why || []).join(' ') + ' ' + (c.playbook || '')
+        + ' ' + (c.findings || []).map(f => f.name).join(' ')).toUpperCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (pickTab === 'live' && PREFS.side && c.side !== PREFS.side) return false;
+    if (pickTab !== 'trend' && PREFS.setup && c.playbook !== PREFS.setup) return false;
+    const px = (LIVEP[c.symbol] && LIVEP[c.symbol].price) || c.price;
+    if (PREFS.price === 'u10' && !(px < 10)) return false;
+    if (PREFS.price === '10_50' && !(px >= 10 && px < 50)) return false;
+    if (PREFS.price === '50_200' && !(px >= 50 && px < 200)) return false;
+    if (PREFS.price === 'o200' && !(px >= 200)) return false;
+    if (+PREFS.score && scoreOf(c) < +PREFS.score) return false;
+    return true;
+  });
+  const by = {
+    score: (a, b) => scoreOf(b) - scoreOf(a),
+    move: (a, b) => Math.abs(dayPctOf(b) || 0) - Math.abs(dayPctOf(a) || 0),
+    since: (a, b) => (sinceOf(b) ?? -1e9) - (sinceOf(a) ?? -1e9),
+    newest: (a, b) => (b.time ? Date.parse(b.time) : -b._i || 0) - (a.time ? Date.parse(a.time) : -a._i || 0),
+    price_d: (a, b) => b.price - a.price, price_a: (a, b) => a.price - b.price,
+    sym: (a, b) => a.symbol.localeCompare(b.symbol),
+  }[PREFS.sort] || ((a, b) => scoreOf(b) - scoreOf(a));
+  rows = rows.slice().sort(by);
+  ROWS_BY_SYM = Object.fromEntries(rows.map(c => [c.symbol, c]));
+  return rows;
+}
+function bindTools() {
+  const map = {pickSort: 'sort', fSide: 'side', fDir: 'dir', fSetup: 'setup', fPrice: 'price', fScore: 'score'};
+  for (const [id, k] of Object.entries(map)) {
+    $(id).value = PREFS[k];
+    $(id).onchange = () => { PREFS[k] = $(id).value; savePrefs(); renderPicks(); if (k === 'dir') refreshPickPrices(); };
+  }
+  let t = null;
+  $('pickSearch').oninput = () => { clearTimeout(t); t = setTimeout(() => { PREFS.q = $('pickSearch').value; renderPicks(); }, 120); };
+  $('fReset').onclick = () => {
+    Object.assign(PREFS, {side: '', setup: '', price: '', score: '0', q: ''});
+    $('pickSearch').value = ''; for (const [id, k] of Object.entries(map)) $(id).value = PREFS[k];
+    savePrefs(); renderPicks();
+  };
+}
+function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(Object.assign({}, PREFS, {q: ''}))); } catch (e) {} }
+
 function pickRow(c, side, live) {
   const chips = cleanReasons(c.reasons).slice(0, 4).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
   const sent = c.top_pick ? '<span class="sent">Sent to phone</span>' : '';
   const when = live && c.time ? `<span class="when">${etTime(c.time, {hour: 'numeric', minute: '2-digit'})} ET</span>` : '';
   return `<li><a class="pick" href="${stockUrl(c.symbol)}">
-    <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span class="price num">${fmtP(c.price)}</span></div>
+    <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span data-px="${esc(c.symbol)}">${livePxHtml(c)}</span></div>
     <div class="pick-main"><div class="pick-top">${sideBadge(side, c.playbook)}${sent}${when}</div><div class="chips">${chips}</div></div>
     <div class="pick-rate">${meter(c.rating, side)}</div>
     <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
   </a></li>`;
 }
+function trendRow(c) {
+  const up = c.dir === 'up';
+  const why = (c.why || []).slice(0, 4).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
+  const finds = (c.findings || []).slice(0, 3).map(f => `<span class="chip find" title="From the chart read">${esc(f.name)}: ${esc(f.status)}</span>`).join('');
+  const cls = c.rating === 'Hot' ? 'hot' : c.rating === 'Strong' ? 'strong' : 'active';
+  return `<li><a class="pick" href="${stockUrl(c.symbol)}">
+    <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span data-px="${esc(c.symbol)}">${livePxHtml(c)}</span></div>
+    <div class="pick-main"><div class="pick-top"><span class="heat ${cls} ${up ? 'up' : ''}">${up ? '▲' : '▼'} ${esc(c.rating)} <span class="sc">${c.score}</span></span>
+      ${c.rvol != null ? `<span class="when">${c.rvol.toFixed(1)}× volume</span>` : ''}
+      ${c.headline ? `<span class="when" title="${esc(c.headline)}">${esc((c.bias || '').replace(/^./, x => x.toUpperCase()))} chart</span>` : ''}</div>
+      <div class="chips">${why}${finds}</div></div>
+    <div class="pick-rate"></div>
+    <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
+  </a></li>`;
+}
 function renderPicks() {
-  const m = SCAN.morning, w = SCAN.watch;
+  const m = SCAN.morning, w = SCAN.watch, T = SCAN.trending;
   const buys = (m && m.buys) || [], sells = (m && m.sells) || [], live = (w && w.entries) || [];
   const sentB = buys.filter(c => c.top_pick).length, sentS = sells.filter(c => c.top_pick).length;
   $('cBuys').textContent = buys.length ? (sentB || buys.length) : '';
   $('cSells').textContent = sells.length ? (sentS || sells.length) : '';
   $('cLive').textContent = live.length || '';
-  if (m) {
-    $('scanWhen').textContent = `Morning scan ${ago(m.ts)} · ${etTime(m.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'})} ET. Tap a stock for the full chart and levels.`;
+  $('cTrend').textContent = T && (T.up || T.down) ? ((T.up || []).length + (T.down || []).length) || '' : '';
+  if (pickTab === 'trend') {
+    $('scanWhen').textContent = T && T.ts
+      ? `Rebuilt every 15 minutes during market hours · last ${ago(T.ts)} (${etTime(T.ts, {hour: 'numeric', minute: '2-digit'})} ET).`
+      : 'Rebuilt every 15 minutes while the market is open.';
+  } else if (m) {
+    $('scanWhen').textContent = `Morning scan ${ago(m.ts)} · ${etTime(m.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'})} ET. Prices update live. Tap a stock for the full chart.`;
   } else {
     $('scanWhen').textContent = 'The first scan runs at 8:00 AM ET on trading days.';
   }
   document.querySelectorAll('[data-pick]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pick === pickTab));
-  let list, side, isLive = false, emptyT, emptyS;
+  $('fSideWrap').hidden = pickTab !== 'live';
+  $('fDirWrap').hidden = pickTab !== 'trend';
+  $('fSetupWrap').hidden = pickTab === 'sells' || pickTab === 'trend';
+  $('fReset').hidden = !filtersOn();
+  let side, isLive = pickTab === 'live', emptyT, emptyS;
+  const foot = $('pickFoot');
+  foot.hidden = true;
   if (pickTab === 'live') {
-    list = live.slice().reverse(); isLive = true;
     emptyT = 'No new setups yet today'; emptyS = 'New matches from the 15-minute checks show up here with the time they were found.';
+  } else if (pickTab === 'trend') {
+    emptyT = T ? 'Nothing is moving hard right now' : 'No trending list yet';
+    emptyS = T ? 'Stocks appear here when they move 3%+ on above-normal volume, or trade 3× their usual volume.' : 'The list is built by the 15-minute scan during market hours (9:30 AM to 4:00 PM ET).';
   } else {
     side = pickTab === 'buys' ? 'BUY' : 'SELL';
     const all = pickTab === 'buys' ? buys : sells;
     const top = all.filter(c => c.top_pick);
-    list = showAll || !top.length ? all : top;
     emptyT = m ? `No ${side === 'BUY' ? 'buy' : 'sell'} setups this morning` : 'No scan yet';
     emptyS = m ? 'Nothing cleared the bar. That is normal on quiet days.' : 'Picks appear here after the 8:00 AM ET scan.';
-    const foot = $('pickFoot');
-    if (all.length > top.length && top.length) {
+    if (all.length > top.length && top.length && !filtersOn()) {
       foot.hidden = false;
       foot.innerHTML = showAll
         ? `<button class="btn btn-s" type="button" id="toggleAll">Show only the ${top.length} sent to your phone</button>`
         : `<button class="btn btn-s" type="button" id="toggleAll">Show all ${all.length} setups</button><span class="mute small">The rest scored lower or are under $3.</span>`;
       $('toggleAll').onclick = () => { showAll = !showAll; renderPicks(); };
-    } else foot.hidden = true;
+    }
   }
-  if (isLive) $('pickFoot').hidden = true;
   renderLiveStatus();
+  const list = currentRows();
+  const base = baseRows().length;
+  if (base && !list.length) { emptyT = 'No matches'; emptyS = 'Nothing here matches your search or filters.'; }
   const shown = list.slice(0, 120);
+  const note = pickTab === 'trend' && shown.length
+    ? `<li class="trend-note">What's moving now, ranked 0 to 100 on the size of the move, volume for the time of day, where it sits in today's range, 20-day breakouts, EMA trend and the full chart read. It is a watchlist of momentum, not a tested buy or sell signal; big movers often reverse. Stop and target are 1.5× and 3× the daily ATR.</li>` : '';
   $('pickList').innerHTML = shown.length
-    ? shown.map(c => pickRow(c, isLive ? c.side : side, isLive)).join('')
-      + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}, ranked by score.</li>` : '')
+    ? shown.map(c => pickTab === 'trend' ? trendRow(c) : pickRow(c, isLive ? c.side : side, isLive)).join('')
+      + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}.</li>` : '') + note
     : `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
+  const key = list.map(c => c.symbol).join(',');
+  if (key !== livepSyms) { livepSyms = key; refreshPickPrices(); }
 }
 document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { pickTab = b.dataset.pick; showAll = false; renderPicks(); });
 async function loadScanner() {
@@ -414,8 +582,9 @@ function renderWatchlist() {
     const dp = q.day_pct;
     const chg = dp == null ? '<span class="chg mute">—</span>' : `<span class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)}</span>`;
     return `<li class="${s === chartSym ? 'on' : ''}">
-      <button class="pick-btn" type="button" data-chart="${esc(s)}" aria-label="Show ${esc(s)} chart"><span class="tick">${esc(s)}</span>${q.stale ? '<span class="closed">Last close</span>' : ''}</button>
+      <a class="sym-link" href="${stockUrl(s)}" title="Open ${esc(s)} details"><span class="tick">${esc(s)}</span>${q.stale ? '<span class="closed">Last close</span>' : ''}</a>
       <span class="px num"><b>${q.price == null ? '…' : fmtP(q.price)}</b>${chg}</span>
+      <button class="btn btn-quiet btn-s chart-btn" type="button" data-chart="${esc(s)}" aria-label="Show ${esc(s)} on the chart below" title="Show on the chart below"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/></svg></button>
       <button class="btn btn-quiet btn-s rm" type="button" data-rm="${esc(s)}" aria-label="Remove ${esc(s)}">✕</button>
     </li>`;
   }).join('');
@@ -679,7 +848,9 @@ initTheme('themeBtn', () => { if (CH) CH.theme(); });
   try { await loadMeta(); } catch (e) { toast('Could not reach the bot: ' + e.message, true); return; }
   await loadWatchlist();
   BOOTED = true;
+  bindTools();
   loadAlerts(); loadScanner(); loadRegime(); refreshQuotes();
+  setInterval(refreshPickPrices, 15000);
   if (!$('view-research').hidden) loadResearch();
   setInterval(refreshQuotes, 2000);
   setInterval(loadScanner, 60000);

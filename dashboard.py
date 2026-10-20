@@ -23,7 +23,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import indicators as ind
 from alerts import BAR_TYPES, EVENT_TYPES, TICK_TYPES, describe
-from scanner import SCAN_MORNING_KEY, SCAN_WATCH_KEY, SCAN_WATCH_LAST_KEY
+from scanner import (SCAN_MORNING_KEY, SCAN_TRENDING_KEY, SCAN_WATCH_KEY,
+                     SCAN_WATCH_LAST_KEY)
 
 import fundamentals
 import scanner as scanner_mod
@@ -62,6 +63,7 @@ REGIMES = ["any", "bull", "bear"]
 CHART_TF_DAILY = {"1m": 30, "6m": 130, "1y": 250}
 DAILY_BARS_CACHE_DAYS = 260
 DAILY_BARS_TTL_SECS = 6 * 3600   # ~6h DB cache on daily bars
+SNAP_TTL_SECS = 10               # live snapshot cache (prices, today's bar)
 QUOTE_CLOSE_TTL_DAYS = 1          # quotes fallback: max one REST fetch/day/symbol
 
 ET_ZONE = ZoneInfo("America/New_York")
@@ -229,6 +231,98 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             return bars[-DAILY_BARS_CACHE_DAYS:], True
         return cached, False
 
+    # ---- live snapshots for ANY symbol (Alpaca, IEX) ----------------------
+    _snap_cache: dict[str, tuple[float, dict | None]] = {}
+
+    def _snapshots(symbols) -> dict[str, dict]:
+        """{SYM: snapshot} from a 10-second cache; one REST call for all
+        stale symbols. Empty when the 'snapshots' extra is missing or the
+        call fails (callers fall back to cached closes)."""
+        fn = extras.get("snapshots")
+        syms = [x.upper() for x in symbols if x and x.isalpha()][:300]
+        now = time.time()
+        need = [x for x in syms
+                if x not in _snap_cache or now - _snap_cache[x][0] > SNAP_TTL_SECS]
+        if need and fn:
+            try:
+                got = fn(need) or {}
+            except Exception:  # noqa: BLE001 - live price is best-effort
+                got = {}
+            for x in need:
+                _snap_cache[x] = (now, got.get(x))
+        return {x: _snap_cache[x][1] for x in syms
+                if x in _snap_cache and _snap_cache[x][1]}
+
+    def _live_daily(symbol: str):
+        """Cached daily bars with TODAY's bar replaced/appended from the live
+        snapshot, so indicators and patterns move with the price."""
+        bars, ok = _daily_bars_cached(symbol)
+        snap = _snapshots([symbol]).get(symbol.upper())
+        if bars and snap and snap.get("bar") and snap["bar"].get("o"):
+            nb = dict(snap["bar"])
+            d_new = datetime.fromtimestamp(nb["ts"], timezone.utc).date()
+            d_last = datetime.fromtimestamp(bars[-1]["ts"], timezone.utc).date()
+            if d_new == d_last:
+                bars = bars[:-1] + [dict(nb, ts=bars[-1]["ts"])]
+            elif d_new > d_last:
+                bars = bars + [nb]
+        return bars, ok, snap
+
+    _intra_cache: dict[str, tuple[float, list]] = {}
+
+    def _minute_bars(symbol: str) -> list[dict]:
+        """Recent 1-minute bars: the live engine's for watchlist names,
+        else one REST fetch cached for 60s."""
+        symbol = symbol.upper()
+        bars = store.candles_load(symbol, "1m", 500)
+        st = market.get(symbol)
+        if st is not None and st.forming:
+            bars = bars + [st.forming]
+        if not bars and extras.get("intraday_bars"):
+            hit = _intra_cache.get(symbol)
+            if hit and time.time() - hit[0] < 60:
+                bars = hit[1]
+            else:
+                try:
+                    bars = extras["intraday_bars"](symbol) or []
+                except Exception:  # noqa: BLE001
+                    bars = []
+                _intra_cache[symbol] = (time.time(), bars)
+        return bars
+
+    def _intraday(symbol: str) -> list[dict]:
+        """Today's (ET) 1-minute bars only."""
+        bars = _minute_bars(symbol)
+        if not bars:
+            return []
+        today = datetime.now(ET_ZONE).date()
+        return [b for b in bars
+                if datetime.fromtimestamp(b["ts"], ET_ZONE).date() == today]
+
+    def _scan_ref(symbol: str) -> dict | None:
+        """The symbol's entry in today's scanner output (latest watch match,
+        else the morning list) — what the Today page showed."""
+        symbol = symbol.upper()
+        for key, kind in ((SCAN_WATCH_KEY, "watch"), (SCAN_MORNING_KEY, "morning")):
+            raw = store.poller_get(key)
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            rows = (data.get("entries") or [])[::-1] if kind == "watch" else \
+                (data.get("buys") or []) + (data.get("sells") or [])
+            for r in rows:
+                if r.get("symbol") == symbol:
+                    return {"kind": kind, "ts": r.get("time") or data.get("ts"),
+                            "side": r.get("side"), "rating": r.get("rating"),
+                            "score": r.get("tech_score", r.get("score")),
+                            "price": r.get("price"), "rsi": r.get("rsi"),
+                            "playbook": r.get("playbook"),
+                            "setups": r.get("setups") or []}
+        return None
+
     def _last_session_close(symbol: str):
         """(close, prev_close) from the daily-bar cache; at most one REST
         fetch per symbol per day. Returns (None, None) when unknown."""
@@ -256,9 +350,20 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
     @app.get("/api/quotes")
     def api_quotes():
         out = {}
-        for symbol in store.watchlist_all():
+        wl = store.watchlist_all()
+        # symbols without a fresh websocket tick (IEX can be sparse on
+        # quieter names) get a live REST snapshot instead
+        quiet = [x for x in wl if market.get(x) is None or market[x].price is None
+                 or (market[x].ts or 0) < time.time() - 60]
+        snaps = _snapshots(quiet) if quiet else {}
+        for symbol in wl:
             st = market.get(symbol)
             price = st.price if st is not None else None
+            sn = snaps.get(symbol)
+            if sn and (price is None or (st.ts or 0) < sn.get("ts", 0)):
+                out[symbol] = {"price": sn["price"], "day_pct": sn["day_pct"],
+                               "ts": sn.get("ts"), "stale": False}
+                continue
             if price is not None:
                 out[symbol] = {
                     "price": price,
@@ -282,19 +387,39 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 }
         return out
 
+    @app.get("/api/prices")
+    def api_prices(symbols: str = ""):
+        """Live price + day % for any symbols (comma-separated, max 300):
+        websocket ticks for watchlist names, Alpaca snapshots otherwise."""
+        syms = [x.strip().upper() for x in symbols.split(",") if x.strip()]
+        syms = [x for x in syms if x.isalpha() and len(x) <= 6][:300]
+        out = {}
+        fresh_tick = {}
+        for x in syms:
+            st = market.get(x)
+            if st is not None and st.price is not None and (st.ts or 0) > time.time() - 60:
+                fresh_tick[x] = {"price": st.price, "ts": st.ts, "live": True,
+                                 "day_pct": ind.day_pct_change(st.price, st.prev_close or 0)}
+        snaps = _snapshots([x for x in syms if x not in fresh_tick])
+        for x in syms:
+            if x in fresh_tick:
+                out[x] = fresh_tick[x]
+            elif x in snaps:
+                sn = snaps[x]
+                out[x] = {"price": sn["price"], "day_pct": sn["day_pct"],
+                          "ts": sn.get("ts"), "live": True}
+        return out
+
     @app.get("/api/candles")
     def api_candles(symbol: str, limit: int = 200, tf: str = "1d"):
         symbol = symbol.upper()
         if tf in CHART_TF_DAILY:
-            bars, _ok = _daily_bars_cached(symbol)
+            bars, _ok, _snap = _live_daily(symbol)   # today's bar is live
             if not bars:
                 _need("daily_bars")  # 503 when the extra is not configured
             bars = bars[-CHART_TF_DAILY[tf]:]
         elif tf == "1d":
-            bars = store.candles_load(symbol, "1m", min(limit, 500))
-            st = market.get(symbol)
-            if st and st.forming:
-                bars = bars + [st.forming]
+            bars = _minute_bars(symbol)[-min(limit, 500):]
         else:
             raise HTTPException(400, "tf must be one of 1d, 1m, 6m, 1y")
         return {"symbol": symbol, "tf": tf,
@@ -403,7 +528,8 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
 
         return {"morning": _poller(SCAN_MORNING_KEY),
                 "watch": _poller(SCAN_WATCH_KEY),
-                "watch_last": _poller(SCAN_WATCH_LAST_KEY)}
+                "watch_last": _poller(SCAN_WATCH_LAST_KEY),
+                "trending": _poller(SCAN_TRENDING_KEY)}
 
     # ---- stock detail ----------------------------------------------------
     PROFILE_TTL_SECS = 24 * 3600   # company profile: one Finnhub call/day
@@ -458,26 +584,19 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
         symbol = symbol.upper()
         if not symbol.isalpha() or not 1 <= len(symbol) <= 6:
             raise HTTPException(400, "invalid symbol")
-        bars, _ok = _daily_bars_cached(symbol)
+        bars, _ok, snap = _live_daily(symbol)
         if not bars:
             raise HTTPException(404, f"no daily data for {symbol}")
         spy = [r["c"] for r in store.candles_load("SPY", "1d", 400)] or None
-        intraday = store.candles_load(symbol, "1m", 500)
-        st = market.get(symbol)
-        if st is not None and st.forming:
-            intraday = intraday + [st.forming]
-        if intraday:
-            today = chart_analysis._et_date(intraday[-1]["ts"])
-            intraday = [b for b in intraday
-                        if chart_analysis._et_date(b["ts"]) == today]
-            if today != datetime.now(ET_ZONE).date():
-                intraday = []
+        intraday = _intraday(symbol)
         rep = chart_analysis.analyze(bars, spy_closes=spy,
-                                     intraday=intraday or None)
+                                     intraday=intraday or None,
+                                     session_vwap=(snap or {}).get("vwap"))
         if rep is None:
             raise HTTPException(404, f"not enough history for {symbol} "
                                      "(needs 60 daily bars)")
-        return {"symbol": symbol, **rep}
+        return {"symbol": symbol, "updated": time.time(),
+                "live": bool(snap), **rep}
 
     @app.get("/api/stock/{symbol}")
     def api_stock(symbol: str):
@@ -490,7 +609,7 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
         symbol = symbol.upper()
         if not symbol.isalpha() or not 1 <= len(symbol) <= 6:
             raise HTTPException(400, "invalid symbol")
-        bars, _ok = _daily_bars_cached(symbol)
+        bars, _ok, snap = _live_daily(symbol)
         if not bars:
             raise HTTPException(404, f"no daily data for {symbol}")
         closes = [b["c"] for b in bars]
@@ -503,7 +622,10 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
         # --- price block (live tick wins, last close otherwise) -----------
         st = market.get(symbol)
         live_price = st.price if st is not None else None
-        if live_price is not None:
+        if live_price is None and snap:
+            price_last, is_live = snap["price"], True
+            day_pct = snap["day_pct"]
+        elif live_price is not None:
             price_last, is_live = live_price, True
             day_pct = ind.day_pct_change(live_price, (st.prev_close or 0))
         else:
@@ -685,6 +807,9 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 "trend": res.get("trend"),
                 "push_bar": scanner_mod.push_bar(side, None,
                                                  res.get("playbook")),
+                "rsi": (res.get("indicators") or {}).get("rsi"),
+                "price": last,
+                "partial_today": bool(snap and snap.get("bar")),
             }
 
         # --- fundamentals (24h-cached pipeline; degrades, never 500s) ------
@@ -710,6 +835,8 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             "stats": stats,
             "levels": levels,
             "scanner": verdict,
+            "scan_ref": _scan_ref(symbol),
+            "updated": time.time(),
             "fundamentals": fund,
             "sentiment": sent,
             "company": company,

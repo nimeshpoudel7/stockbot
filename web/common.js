@@ -37,6 +37,16 @@ function ago(iso) {
   return etTime(iso, {month: 'short', day: 'numeric'});
 }
 
+// Is the US market open right now (Mon-Fri 9:30-16:00 ET)? Holidays are not
+// known here; the scanner itself skips them.
+function marketOpenNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short',
+    hour: 'numeric', minute: 'numeric', hour12: false}).formatToParts(new Date()).map(x => [x.type, x.value]));
+  if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
+  const m = (+p.hour % 24) * 60 + (+p.minute);
+  return m >= 570 && m < 960;
+}
+
 // ---- rating meter (x.x / 10 as ten segments) ------------------------------
 function meter(rating, side) {
   const v = parseFloat(rating);
