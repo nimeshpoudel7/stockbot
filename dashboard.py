@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import FastAPI, HTTPException
+
+import chart_analysis
 from fastapi.responses import HTMLResponse, JSONResponse
 
 import indicators as ind
@@ -448,6 +450,35 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             pass
         return data
 
+    @app.get("/api/analysis/{symbol}")
+    def api_analysis(symbol: str):
+        """Chart reading (chart_analysis.analyze) on the cached daily bars,
+        plus today's 1-minute bars for watchlist symbols (VWAP, opening
+        range). Descriptive only — not part of the scanner score."""
+        symbol = symbol.upper()
+        if not symbol.isalpha() or not 1 <= len(symbol) <= 6:
+            raise HTTPException(400, "invalid symbol")
+        bars, _ok = _daily_bars_cached(symbol)
+        if not bars:
+            raise HTTPException(404, f"no daily data for {symbol}")
+        spy = [r["c"] for r in store.candles_load("SPY", "1d", 400)] or None
+        intraday = store.candles_load(symbol, "1m", 500)
+        st = market.get(symbol)
+        if st is not None and st.forming:
+            intraday = intraday + [st.forming]
+        if intraday:
+            today = chart_analysis._et_date(intraday[-1]["ts"])
+            intraday = [b for b in intraday
+                        if chart_analysis._et_date(b["ts"]) == today]
+            if today != datetime.now(ET_ZONE).date():
+                intraday = []
+        rep = chart_analysis.analyze(bars, spy_closes=spy,
+                                     intraday=intraday or None)
+        if rep is None:
+            raise HTTPException(404, f"not enough history for {symbol} "
+                                     "(needs 60 daily bars)")
+        return {"symbol": symbol, **rep}
+
     @app.get("/api/stock/{symbol}")
     def api_stock(symbol: str):
         """Full detail bundle for one symbol — real data only.
@@ -517,11 +548,19 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
         # hasn't printed yet — its volume is a fraction of a full day, so
         # the ratio is labelled "early session" on the page (display only).
         vol_ratio_partial = False
+        vol_ratio_paced = None
         if vol_ratio is not None:
             now_et = datetime.now(ET_ZONE)
             last_bar_et = datetime.fromtimestamp(bars[-1]["ts"], ET_ZONE)
             vol_ratio_partial = (last_bar_et.date() == now_et.date()
                                  and now_et.time() < MARKET_CLOSE_ET)
+            # Paced ratio: today's partial volume vs what a normal day has
+            # usually traded BY THIS TIME (U-shaped intraday volume curve),
+            # so 0.63x at noon reads as ~1.7x the normal pace, not "light".
+            mins = chart_analysis.session_minutes(now_et)
+            if vol_ratio_partial and mins is not None:
+                vol_ratio_paced = chart_analysis.paced_volume_ratio(
+                    vols[-1], statistics.median(vols[-21:-1]), mins)
         # %B: where the last close sits inside the bands (1.0 = upper band,
         # 0.0 = lower band, 0.5 = the 20-day average); None when the bands
         # are unavailable or degenerate (upper == lower).
@@ -578,6 +617,7 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             "sma50": ind.sma(closes, 50), "sma200": ind.sma(closes, 200),
             "rsi14": rsi14, "vol_ratio": vol_ratio,
             "vol_ratio_partial": vol_ratio_partial,
+            "vol_ratio_paced": vol_ratio_paced,
         }
         # Display rows for the page: duplicates collapsed, every distance
         # formatted by the one shared helper off the one snapshot price.

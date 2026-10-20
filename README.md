@@ -314,6 +314,41 @@ sessions.py calendar — exits quietly otherwise.
   `requests` calls fail without them) and load API keys from the project's
   `.env`.
 
+## Chart reading (stock page)
+
+Tap any stock to open its page. `chart_analysis.py` reads the chart the way
+a chart reader does and lists every technique it checked: what is showing
+right now, and what was checked but isn't there.
+
+| Category | Techniques |
+|---|---|
+| Trend | market structure (HH/HL, LH/LL), break of structure, change of character, moving-average stack, pullback vs reversal |
+| Levels | support / resistance zones (with touch counts), breakout & retest, false breakout (bull / bear trap) |
+| Gaps | breakaway, runaway, exhaustion and common gaps with fill %, unfilled gaps, fair value gaps |
+| Candles | hammer, shooting star, engulfing, doji, morning / evening star, three soldiers / crows, piercing line, dark cloud, inside / outside bar |
+| Patterns | double top / bottom, head & shoulders (and inverse), ascending / descending / symmetrical triangles, rising / falling wedges and channels, rectangle, bull / bear flags, pennants, cup & handle, rounded bottom |
+| Volume | relative volume (paced for the time of day), breakout confirmation, price–volume divergence, climax, OBV, volume profile (POC, value area) |
+| Indicators | SMA, EMA, RSI, MACD, Bollinger, ATR, Stochastic, ADX, CCI, Donchian, Parabolic SAR, Ichimoku, Fibonacci, VWAP |
+| Liquidity | equal highs / lows, liquidity sweeps, order blocks, breaker blocks, premium / discount, anchored VWAP |
+| Context | previous day high / low, 52-week range, relative strength and correlation vs SPY, weekly vs daily trend, opening range |
+
+The chart can show moving averages, Bollinger bands, volume, support /
+resistance, pattern and gap markers, trendlines, zones (gaps, FVGs, order
+blocks) and Fibonacci levels, plus RSI and MACD panels. A **risk planner**
+sizes a position from your account size, risk % and a stop (ATR, swing low,
+or below support), with reward : risk and a chandelier trailing stop.
+
+**Volume during the session is paced.** "0.63× normal" at noon used to
+compare a half day with a full day. Most volume trades near the open and
+the close, so by noon a stock has usually traded only ~38% of its day; the
+page now shows today's volume against that pace (0.63× of a full day at
+noon = ~1.7× the normal pace).
+
+Chart reading describes the chart; it is **not** part of the scanner score.
+Pattern rules are mechanical versions of shapes people judge by eye, and
+none of them predicts price on its own. The scanner verdict is the
+validated signal.
+
 ## Free-tier limits (read this)
 
 - **Alpaca free Basic**: real-time US stocks via the **IEX feed** (one exchange's
@@ -364,6 +399,7 @@ No engine changes needed — it only sees merged ticks.
 | `storage.py` | SQLite: alerts (+timeframe/regime), alert state, watchlist, candle cache, fire history, fundamentals cache, poller state, market calendar |
 | `fundamentals.py` | Piotroski / Altman / DCF from Finnhub annuals, 24h SQLite cache |
 | `regime.py` | SPY vs SMA200 bull/bear/sideways |
+| `chart_analysis.py` | chart reading for the stock page: gaps, candles, structure, levels, patterns, volume, indicators, liquidity, context, risk plan |
 | `sessions.py` | Alpaca market calendar (holidays/half-days) |
 | `event_alerts.py` | hourly Finnhub poller: splits/buybacks (news keywords), news spikes, sell-the-news |
 | `predict.py` | EXPERIMENTAL sklearn model + walk-forward validation; `python -m predict SYMBOL` |

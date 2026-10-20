@@ -79,6 +79,54 @@
 .analysts i{display:block;height:100%}
 .legend{display:flex;gap:14px;font-size:.8rem;color:var(--ink-2);margin-top:6px;flex-wrap:wrap}
 .legend span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:var(--c)}
+.chart-tools{display:flex;gap:6px;flex-wrap:wrap;padding:4px 18px 8px}
+.chip-t{appearance:none;border:1px solid var(--line-soft);background:var(--panel-2);color:var(--ink-2);font:inherit;font-size:.8rem;font-weight:500;
+  border-radius:999px;padding:4px 10px 4px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip-t i{width:8px;height:8px;border-radius:50%;opacity:.35}
+.chip-t[aria-pressed="true"]{color:var(--ink);border-color:var(--line)}
+.chip-t[aria-pressed="true"] i{opacity:1}
+.chip-t[disabled]{opacity:.45;cursor:default}
+.sub{position:relative;border-top:1px solid var(--line-soft);margin-top:4px}
+.sub-l{position:absolute;left:8px;top:4px;z-index:2;font-size:.74rem;color:var(--mute)}
+.sub-l b{color:var(--ink);font-weight:600}
+.subchart{height:110px}
+.legend-l{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--mute);margin:8px 8px 0}
+.legend-l span::before{content:"";display:inline-block;width:12px;height:2px;margin:0 6px 3px 0;background:var(--c);vertical-align:middle}
+
+/* chart reading */
+.sum-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bias{font-weight:600;font-size:.95rem;border-radius:6px;padding:3px 10px}
+.bias.bullish{color:var(--buy);background:var(--buy-bg)} .bias.bearish{color:var(--sell);background:var(--sell-bg)}
+.bias.mixed{color:var(--amber-text);background:var(--amber-soft)}
+.evid{flex:1;min-width:160px;display:flex;flex-direction:column;gap:4px}
+.evid-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line)}
+.evid-bar i{display:block;height:100%}
+.evid-l{display:flex;justify-content:space-between;font-size:.76rem;color:var(--mute)}
+.headline{margin:12px 0 4px;color:var(--ink);max-width:70ch}
+.hl{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.hl li{border:1px solid var(--line-soft);background:var(--panel-2);border-radius:var(--radius);padding:9px 11px;cursor:pointer}
+.hl li:hover{border-color:var(--line)}
+.hl .n{font-size:.86rem;font-weight:500;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.read-tabs{display:flex;gap:4px;overflow-x:auto;margin:18px -18px 0;padding:0 18px 2px;border-bottom:1px solid var(--line-soft);scrollbar-width:thin}
+.read-tabs button{appearance:none;border:0;background:none;color:var(--ink-2);font:inherit;font-size:.88rem;font-weight:500;padding:9px 10px;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;gap:6px;align-items:center}
+.read-tabs button:hover{color:var(--ink)}
+.read-tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--amber)}
+.read-tabs .c{font-size:.72rem;color:var(--mute);background:var(--panel-2);border-radius:999px;padding:0 6px}
+.fds{list-style:none;margin:0;padding:0}
+.fd{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.fd:last-child{border-bottom:0}
+.fd-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.fd-n{font-weight:500}
+.fd-d{font-size:.88rem;color:var(--ink-2);margin-top:4px;max-width:72ch}
+details.checked{margin-top:12px;font-size:.86rem}
+details.checked summary{cursor:pointer;color:var(--mute)}
+details.checked ul{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px}
+details.checked li{color:var(--mute)}
+details.checked li b{color:var(--ink-2);font-weight:500}
+.rp{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:14px}
+.rp-out{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:16px}
+.rp-out .tile .v{font-size:1.15rem}
+.rp-warn{margin-top:12px;font-size:.86rem;color:var(--sell)}
 .chart-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 18px 6px}
 .chart-h .spacer{flex:1}
 .chart-b{padding:0 10px 10px}
@@ -130,7 +178,34 @@
             <button type="button" data-tf="1y" aria-pressed="true">1Y</button>
           </div>
         </div>
-        <div class="chart-b"><div class="chart" id="chart"></div></div>
+        <div class="chart-tools" role="group" aria-label="Chart layers">
+          <button type="button" class="chip-t" data-layer="ma" aria-pressed="true"><i style="background:var(--ov1)"></i>Averages</button>
+          <button type="button" class="chip-t" data-layer="bb" aria-pressed="false"><i style="background:var(--ov2)"></i>Bollinger</button>
+          <button type="button" class="chip-t" data-layer="vol" aria-pressed="true"><i style="background:var(--ov4)"></i>Volume</button>
+          <button type="button" class="chip-t" data-layer="levels" aria-pressed="true"><i style="background:var(--buy)"></i>Support / resistance</button>
+          <button type="button" class="chip-t" data-layer="marks" aria-pressed="true"><i style="background:var(--amber)"></i>Patterns &amp; gaps</button>
+          <button type="button" class="chip-t" data-layer="zones" aria-pressed="false"><i style="background:var(--ov3)"></i>Zones</button>
+          <button type="button" class="chip-t" data-layer="fib" aria-pressed="false"><i style="background:var(--ov3)"></i>Fibonacci</button>
+          <button type="button" class="chip-t" data-layer="rsi" aria-pressed="true"><i style="background:var(--ov2)"></i>RSI</button>
+          <button type="button" class="chip-t" data-layer="macd" aria-pressed="false"><i style="background:var(--ov1)"></i>MACD</button>
+        </div>
+        <div class="chart-b">
+          <div class="chart" id="chart"></div>
+          <div class="sub" id="rsiWrap"><span class="sub-l">RSI 14 <b id="rsiNow"></b></span><div class="subchart" id="rsiChart"></div></div>
+          <div class="sub" id="macdWrap" hidden><span class="sub-l">MACD 12/26/9</span><div class="subchart" id="macdChart"></div></div>
+          <p class="note" id="chartNote" style="padding:0 8px" hidden>Overlays, patterns and RSI/MACD are drawn on daily charts (1M, 6M, 1Y). Support/resistance and Fibonacci levels stay on the 1D view.</p>
+          <p class="legend-l" id="chartLegend"></p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="rdTitle" id="readPanel">
+        <div class="panel-h"><h2 id="rdTitle">Chart reading</h2>
+          <p class="mute small">Every technique from the chart-reading playbook, checked on this stock: trend, levels, gaps, candles, patterns, volume, indicators, liquidity and context. It describes the chart; the scanner verdict above is the tested signal.</p></div>
+        <div class="panel-b">
+          <div id="readSum"><div class="skeleton"></div></div>
+          <div class="read-tabs" role="tablist" aria-label="Chart-reading categories" id="readTabs"></div>
+          <div id="readBody"></div>
+        </div>
       </section>
 
       <section class="panel" aria-labelledby="indTitle">
@@ -165,7 +240,13 @@
 const SYM = (QS.get('symbol') || '').toUpperCase();
 $('backLink').href = homeUrl();
 let CH = null, chartTf = '1y';
-initTheme('themeBtn', () => { if (CH) CH.theme(); });
+initTheme('themeBtn', () => {
+  if (CH) CH.theme();
+  // recolour everything drawn from CSS variables
+  Object.keys(OV).forEach(k => { try { CH.chart.removeSeries(OV[k]); } catch (e) {} delete OV[k]; });
+  Object.values(SUB).forEach(sc => sc.chart.remove()); SUB = {};
+  applyLayers();
+});
 
 function fmtCap(musd) {
   if (musd == null) return '—';
@@ -210,14 +291,211 @@ document.querySelectorAll('[data-tf]').forEach(b => b.onclick = () => {
   document.querySelectorAll('[data-tf]').forEach(x => x.setAttribute('aria-pressed', x.dataset.tf === chartTf));
   drawChart();
 });
+// ---------------------------------------------------------------- chart layers
+let AN = null, BARS = [];
+const LAYERS = {ma: true, bb: false, vol: true, levels: true, marks: true, zones: false, fib: false, rsi: true, macd: false};
+try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('sb-layers') || '{}')); } catch (e) {}
+const OV = {}; let PRICE_LINES = [], SUB = {};
+function lineOpts(color, extra) {
+  return Object.assign({color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false}, extra || {});
+}
+function biasColor(b) { return b === 'bull' ? cssVar('--buy') : b === 'bear' ? cssVar('--sell') : cssVar('--mute'); }
+function ensureSeries() {
+  const c = CH.chart;
+  const mk = (k, o) => { if (!OV[k]) OV[k] = c.addLineSeries(o); return OV[k]; };
+  mk('sma20', lineOpts(cssVar('--ov1'), {lineWidth: 1}));
+  mk('sma50', lineOpts(cssVar('--ov2')));
+  mk('sma200', lineOpts(cssVar('--ov3'), {lineWidth: 2}));
+  mk('bbu', lineOpts(cssVar('--ov2'), {lineStyle: 2, lineWidth: 1}));
+  mk('bbl', lineOpts(cssVar('--ov2'), {lineStyle: 2, lineWidth: 1}));
+  mk('tlu', lineOpts(cssVar('--amber'), {lineWidth: 1, lineStyle: 0}));
+  mk('tll', lineOpts(cssVar('--amber'), {lineWidth: 1, lineStyle: 0}));
+  if (!OV.vol) {
+    OV.vol = c.addHistogramSeries({priceScaleId: 'vol', priceFormat: {type: 'volume'}, priceLineVisible: false, lastValueVisible: false});
+    c.priceScale('vol').applyOptions({scaleMargins: {top: 0.82, bottom: 0}});
+  }
+}
+function subChart(id) {
+  if (SUB[id]) return SUB[id];
+  const el = $(id);
+  const ch = LightweightCharts.createChart(el, {autoSize: true, layout: {background: {color: 'transparent'}, textColor: cssVar('--mute'), fontFamily: "'IBM Plex Sans', system-ui, sans-serif"},
+    grid: {vertLines: {visible: false}, horzLines: {color: cssVar('--chart-grid')}}, rightPriceScale: {borderVisible: false},
+    timeScale: {visible: false, borderVisible: false}, crosshair: {mode: 0}, handleScroll: false, handleScale: false});
+  SUB[id] = {chart: ch, s: {}};
+  CH.chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) try { ch.timeScale().setVisibleLogicalRange(r); } catch (e) {} });
+  return SUB[id];
+}
+// pad an indicator series with whitespace so it lines up bar-for-bar with the candles
+function aligned(series) {
+  const m = new Map((series || []).map(p => [p.time, p.value]));
+  return BARS.map(b => m.has(b.time) ? {time: b.time, value: m.get(b.time)} : {time: b.time});
+}
+function clearLines() { PRICE_LINES.forEach(l => { try { CH.series.removePriceLine(l); } catch (e) {} }); PRICE_LINES = []; }
+function addLine(price, title, color, style) {
+  PRICE_LINES.push(CH.series.createPriceLine({price, color, lineWidth: 1, lineStyle: style == null ? 2 : style, axisLabelVisible: true, title}));
+}
+function applyLayers() {
+  if (!CH) return;
+  ensureSeries();
+  const daily = chartTf !== '1d' && AN;
+  const C = AN ? AN.chart : null;
+  const inRange = t => BARS.length && t >= BARS[0].time && t <= BARS[BARS.length - 1].time;
+  const set = (k, data) => OV[k].setData(data || []);
+  set('sma20', daily && LAYERS.ma ? aligned(C.overlays.sma20) : []);
+  set('sma50', daily && LAYERS.ma ? aligned(C.overlays.sma50) : []);
+  set('sma200', daily && LAYERS.ma ? aligned(C.overlays.sma200) : []);
+  set('bbu', daily && LAYERS.bb ? aligned(C.overlays.bb_upper) : []);
+  set('bbl', daily && LAYERS.bb ? aligned(C.overlays.bb_lower) : []);
+  const tl = daily && LAYERS.marks && C.trendlines;
+  set('tlu', tl && inRange(tl.upper[0][0]) ? tl.upper.map(([t, v]) => ({time: t, value: v})) : []);
+  set('tll', tl && inRange(tl.lower[0][0]) ? tl.lower.map(([t, v]) => ({time: t, value: v})) : []);
+  OV.vol.setData(daily && LAYERS.vol ? C.volume.filter(v => inRange(v.time)).map(v => ({time: v.time, value: v.value,
+    color: (v.up ? cssVar('--buy') : cssVar('--sell')) + '55'})) : []);
+  CH.series.setMarkers(daily && LAYERS.marks ? C.markers.filter(m => inRange(m.ts)).map(m => ({time: m.ts,
+    position: m.pos === 'below' ? 'belowBar' : 'aboveBar', color: biasColor(m.bias),
+    shape: m.bias === 'bull' ? 'arrowUp' : m.bias === 'bear' ? 'arrowDown' : 'circle', text: m.text})) : []);
+  clearLines();
+  if (C && LAYERS.levels) C.lines.forEach(l => addLine(l.price, l.title, l.kind === 'poc' ? cssVar('--ov4') : biasColor(l.bias)));
+  if (C && LAYERS.zones) C.zones.forEach(z => {
+    const nm = z.kind === 'gap' ? 'Open gap' : z.kind === 'fvg' ? 'FVG' : 'Order block';
+    addLine(z.hi, nm + ' top', cssVar('--ov3'), 1); addLine(z.lo, nm + ' bottom', cssVar('--ov3'), 1);
+  });
+  if (C && LAYERS.fib) C.fib.forEach(f => addLine(f.price, 'Fib ' + (f.ratio * 100).toFixed(1) + '%', cssVar('--ov3'), 3));
+  // RSI / MACD panes
+  $('rsiWrap').hidden = !(daily && LAYERS.rsi);
+  $('macdWrap').hidden = !(daily && LAYERS.macd);
+  if (daily && LAYERS.rsi) {
+    const R = subChart('rsiChart');
+    if (!R.s.rsi) {
+      R.s.rsi = R.chart.addLineSeries(lineOpts(cssVar('--ov2'), {lastValueVisible: true}));
+      R.s.rsi.createPriceLine({price: 70, color: cssVar('--sell'), lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+      R.s.rsi.createPriceLine({price: 30, color: cssVar('--buy'), lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+    }
+    R.s.rsi.setData(aligned(C.rsi));
+    const last = C.rsi[C.rsi.length - 1];
+    $('rsiNow').textContent = last ? last.value.toFixed(1) : '';
+  }
+  if (daily && LAYERS.macd) {
+    const M = subChart('macdChart');
+    if (!M.s.h) {
+      M.s.h = M.chart.addHistogramSeries({priceLineVisible: false, lastValueVisible: false});
+      M.s.l = M.chart.addLineSeries(lineOpts(cssVar('--ov2')));
+      M.s.g = M.chart.addLineSeries(lineOpts(cssVar('--ov1')));
+    }
+    M.s.h.setData(aligned(C.macd.hist).map(p => p.value == null ? p : Object.assign(p, {color: (p.value >= 0 ? cssVar('--buy') : cssVar('--sell')) + '99'})));
+    M.s.l.setData(aligned(C.macd.line)); M.s.g.setData(aligned(C.macd.signal));
+  }
+  const r = CH.chart.timeScale().getVisibleLogicalRange();
+  Object.values(SUB).forEach(sc => { if (r) try { sc.chart.timeScale().setVisibleLogicalRange(r); } catch (e) {} });
+  $('chartNote').hidden = chartTf !== '1d';
+  document.querySelectorAll('.chip-t').forEach(b => {
+    b.setAttribute('aria-pressed', !!LAYERS[b.dataset.layer]);
+    b.disabled = chartTf === '1d' && !['levels', 'fib'].includes(b.dataset.layer);
+  });
+  const lg = [];
+  if (daily && LAYERS.ma) lg.push(['--ov1', 'SMA 20'], ['--ov2', 'SMA 50'], ['--ov3', 'SMA 200']);
+  if (daily && LAYERS.bb) lg.push(['--ov2', 'Bollinger 20, 2σ (dashed)']);
+  if (daily && LAYERS.marks && C.trendlines) lg.push(['--amber', 'Pattern trendlines']);
+  $('chartLegend').innerHTML = lg.map(([c, t]) => `<span style="--c:var(${c})">${t}</span>`).join('');
+}
+document.querySelectorAll('.chip-t').forEach(b => b.onclick = () => {
+  LAYERS[b.dataset.layer] = !LAYERS[b.dataset.layer];
+  try { localStorage.setItem('sb-layers', JSON.stringify(LAYERS)); } catch (e) {}
+  applyLayers();
+});
 async function drawChart() {
   if (!SYM) return;
   try {
     const {bars} = await api('GET', '/api/candles?symbol=' + encodeURIComponent(SYM) + '&limit=200&tf=' + chartTf);
     if (!CH) CH = makeChart($('chart'));
+    BARS = bars;
     CH.series.setData(bars);
     if (chartTf === '1d') CH.chart.timeScale().scrollToRealTime(); else CH.chart.timeScale().fitContent();
+    applyLayers();
   } catch (e) {}
+}
+
+// ---------------------------------------------------------------- chart reading
+let readTab = null;
+const pillCls = b => b === 'bull' ? 'good' : b === 'bear' ? 'bad' : '';
+function fdHtml(f) {
+  return `<li class="fd"><div class="fd-h"><span class="fd-n">${esc(f.name)}</span><span class="pill ${pillCls(f.bias)}">${esc(f.status)}</span></div><p class="fd-d">${esc(f.detail)}</p></li>`;
+}
+function renderReadSummary() {
+  const S = AN.summary;
+  const tot = S.bull + S.bear || 1;
+  $('readSum').innerHTML = `<div class="sum-top"><span class="bias ${S.bias}">${S.bias === 'bullish' ? 'Leans bullish' : S.bias === 'bearish' ? 'Leans bearish' : 'Mixed'}</span>
+    <div class="evid"><div class="evid-bar" aria-hidden="true"><i style="width:${S.bull / tot * 100}%;background:var(--buy)"></i><i style="width:${S.bear / tot * 100}%;background:var(--sell)"></i></div>
+    <div class="evid-l"><span>Bullish ${S.bull}</span><span>Bearish ${S.bear}</span></div></div></div>
+    <p class="mute small" style="margin-top:6px">${S.found} of ${S.checked} techniques found on this chart</p>
+    <p class="headline">${esc(S.headline)}</p>
+    ${S.highlights.length ? '<ul class="hl">' + S.highlights.map(h => `<li data-find="${esc(h.name)}"><div class="n"><span>${esc(h.name)}</span><span class="pill ${pillCls(h.bias)}">${esc(h.status)}</span></div></li>`).join('') + '</ul>' : ''}`;
+  document.querySelectorAll('.hl li').forEach(li => li.onclick = () => {
+    const sec = AN.sections.find(s => s.items.some(f => f.name === li.dataset.find));
+    if (sec) { readTab = sec.key; renderReadTabs(); $('readTabs').scrollIntoView({behavior: 'smooth', block: 'start'}); }
+  });
+}
+function renderReadTabs() {
+  const tabs = AN.sections.map(s => ({key: s.key, title: s.title, n: s.items.filter(f => f.active).length})).concat([{key: 'risk', title: 'Risk planner'}]);
+  if (!readTab) readTab = tabs[0].key;
+  $('readTabs').innerHTML = tabs.map(t => `<button role="tab" type="button" data-rt="${t.key}" aria-selected="${t.key === readTab}">${esc(t.title)}${t.n != null ? ` <span class="c">${t.n}</span>` : ''}</button>`).join('');
+  $('readTabs').querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { readTab = b.dataset.rt; renderReadTabs(); });
+  if (readTab === 'risk') { renderRisk(); return; }
+  const sec = AN.sections.find(s => s.key === readTab);
+  const on = sec.items.filter(f => f.active), off = sec.items.filter(f => !f.active);
+  $('readBody').innerHTML = (on.length ? '<ul class="fds">' + on.map(fdHtml).join('') + '</ul>' : '<p class="empty"><b>Nothing showing in this category</b>Every technique below was checked.</p>')
+    + (off.length ? `<details class="checked"${on.length ? '' : ' open'}><summary>Checked, not present (${off.length})</summary><ul>${off.map(f => `<li><b>${esc(f.name)}</b> — ${esc(f.detail)}</li>`).join('')}</ul></details>` : '');
+}
+
+// ---------------------------------------------------------------- risk planner
+let RP = {acct: 10000, riskPct: 1};
+try { Object.assign(RP, JSON.parse(localStorage.getItem('sb-risk') || '{}')); } catch (e) {}
+function renderRisk() {
+  const R = AN.risk;
+  const stops = R.stops.map((s, i) => `<option value="${s.price.toFixed(4)}"${i === 0 ? ' selected' : ''}>${esc(s.name)} — ${fmtP(s.price)}</option>`).join('');
+  $('readBody').innerHTML = `<p class="fd-d" style="margin-top:14px">Decide what you can lose before deciding how much to buy. Position size = money at risk ÷ distance to the stop.</p>
+   <div class="rp">
+     <label class="field">Account size ($)<input id="rpAcct" type="number" min="0" step="100" value="${RP.acct}"></label>
+     <label class="field">Risk per trade (%)<input id="rpRisk" type="number" min="0.1" max="10" step="0.1" value="${RP.riskPct}"></label>
+     <label class="field">Entry price ($)<input id="rpEntry" type="number" min="0" step="0.01" value="${R.price.toFixed(2)}"></label>
+     <label class="field">Stop<select id="rpStopSel">${stops}<option value="custom">Custom…</option></select></label>
+     <label class="field" id="rpStopWrap" hidden>Custom stop ($)<input id="rpStop" type="number" min="0" step="0.01" value="${R.stops[0].price.toFixed(2)}"></label>
+     <label class="field">Target<select id="rpTgtSel">${R.targets.map(t => `<option value="${t.price != null ? 'p' + t.price.toFixed(4) : 'r' + t.mult}"${t.mult === 2 ? ' selected' : ''}>${esc(t.name)}${t.price != null ? ' — ' + fmtP(t.price) : ''}</option>`).join('')}</select></label>
+   </div>
+   <div class="rp-out" id="rpOut"></div>
+   <p class="fd-d" style="margin-top:12px" id="rpWhy"></p>
+   <p class="fd-d">Trailing stop idea: ${esc(R.trailing.name)} at <b>${fmtP(R.trailing.price)}</b> — raise it as the 22-day high rises, never lower it. Normal daily range (ATR) is ${fmtP(R.atr)}.</p>`;
+  const calc = () => {
+    const acct = +$('rpAcct').value || 0, rp = +$('rpRisk').value || 0, entry = +$('rpEntry').value || 0;
+    const sel = $('rpStopSel').value;
+    $('rpStopWrap').hidden = sel !== 'custom';
+    const stop = sel === 'custom' ? (+$('rpStop').value || 0) : +sel;
+    const per = entry - stop;
+    const tv = $('rpTgtSel').value;
+    const target = tv[0] === 'p' ? +tv.slice(1) : entry + per * +tv.slice(1);
+    RP = {acct, riskPct: rp};
+    try { localStorage.setItem('sb-risk', JSON.stringify(RP)); } catch (e) {}
+    const st = R.stops.find(s => s.price.toFixed(4) === sel);
+    $('rpWhy').textContent = st ? st.why : 'Custom stop.';
+    if (!(entry > 0) || !(per > 0)) { $('rpOut').innerHTML = '<p class="rp-warn">The stop has to be below the entry for a long trade.</p>'; return; }
+    const riskAmt = acct * rp / 100;
+    const shares = Math.floor(riskAmt / per);
+    const pos = shares * entry, rr = (target - entry) / per;
+    $('rpOut').innerHTML = [
+      ['Shares to buy', shares.toLocaleString('en-US')], ['Position size', fmtP(pos) + (acct ? ` (${(pos / acct * 100).toFixed(0)}% of account)` : '')],
+      ['Money at risk', fmtP(shares * per)], ['Risk per share', fmtP(per) + ` (${(per / entry * 100).toFixed(1)}%)`],
+      ['Target', fmtP(target)], ['Reward : risk', rr > 0 ? rr.toFixed(1) + ' : 1' : '—'],
+    ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join('')
+      + (acct && pos > acct ? '<p class="rp-warn" style="grid-column:1/-1">That position is larger than the account — the stop is too tight for this risk, or use a smaller risk %.</p>' : '')
+      + (rr > 0 && rr < 1.5 ? '<p class="rp-warn" style="grid-column:1/-1">Reward is under 1.5× the risk — many traders skip setups like this.</p>' : '');
+  };
+  ['rpAcct', 'rpRisk', 'rpEntry', 'rpStop', 'rpStopSel', 'rpTgtSel'].forEach(id => $(id).addEventListener('input', calc));
+  calc();
+}
+async function loadAnalysis() {
+  try { AN = await api('GET', '/api/analysis/' + encodeURIComponent(SYM)); }
+  catch (e) { $('readSum').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  renderReadSummary(); renderReadTabs(); applyLayers();
 }
 
 function renderVerdict(v, price) {
@@ -258,9 +536,11 @@ function renderTiles(L) {
   const r = L.rsi14;
   t.push(`<div class="tile"><div class="k">Momentum (RSI 14)</div><div class="v num">${r == null ? '—' : r.toFixed(0)}</div>
     <div class="gauge" aria-hidden="true">${r == null ? '' : `<i style="left:${Math.max(0, Math.min(100, r))}%"></i>`}</div><div class="t">${rsiText(r)}</div></div>`);
-  const vr = L.vol_ratio;
-  t.push(`<div class="tile"><div class="k">Volume vs normal</div><div class="v num">${vr == null ? '—' : vr.toFixed(1) + '×'}</div>
-    <div class="t">${vr == null ? '' : vr >= 2 ? 'Heavy — big players are active' : vr < 0.7 ? 'Light — little conviction' : 'About normal'}${L.vol_ratio_partial ? ' (partial day so far)' : ''}</div></div>`);
+  const paced = L.vol_ratio_partial && L.vol_ratio_paced != null;
+  const vr = paced ? L.vol_ratio_paced : L.vol_ratio;
+  t.push(`<div class="tile"><div class="k">${paced ? 'Volume vs normal pace' : 'Volume vs normal'}</div><div class="v num">${vr == null ? '—' : vr.toFixed(1) + '×'}</div>
+    <div class="t">${vr == null ? '' : vr >= 2 ? 'Heavy — big players are active' : vr >= 1.5 ? 'Busy' : vr < 0.7 ? 'Light — little conviction' : 'About normal'}${paced
+      ? `. So far today ${L.vol_ratio.toFixed(2)}× a full day — adjusted for the time of day (most volume trades near the open and close).` : ''}</div></div>`);
   t.push(`<div class="tile"><div class="k">Band position (%B)</div><div class="v num">${L.pct_b == null ? '—' : L.pct_b.toFixed(2)}</div><div class="t">${pctBText(L.pct_b)}</div></div>`);
   t.push(`<div class="tile"><div class="k">Band width (Bandwidth)</div><div class="v num">${L.bandwidth == null ? '—' : L.bandwidth.toFixed(3)}</div><div class="t">${bwText(L.bandwidth_context)}</div></div>`);
   $('tiles').innerHTML = t.join('');
@@ -331,6 +611,7 @@ async function load() {
   renderFund(d.fundamentals, p.last);
   renderSent(d.sentiment || {});
   drawChart();
+  loadAnalysis();
 }
 load();
 </script>
