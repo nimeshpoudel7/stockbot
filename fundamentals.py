@@ -336,7 +336,7 @@ def dcf_fair_value(cur: dict, prev: dict | None,
                    terminal_growth: float = 0.03) -> dict | None:
     """Simplified FCF DCF: 5yr projection + Gordon terminal value.
 
-    equity value = PV(FCF_1..5) + PV(terminal) - total_liab + cash,
+    equity value = PV(FCF_1..5) + PV(terminal) - debt + cash,
     per share = equity / shares. None when FCF/shares are unusable.
     """
     fcf = cur["fcf"]
@@ -360,7 +360,14 @@ def dcf_fair_value(cur: dict, prev: dict | None,
         pv += f / (1 + wacc) ** yr
     terminal = f * (1 + terminal_growth) / (wacc - terminal_growth)
     pv += terminal / (1 + wacc) ** 5
-    equity = pv - (cur["total_liab"] or 0) + (cur["cash"] or 0)
+    # Enterprise -> equity: subtract DEBT, add cash. Subtracting total
+    # liabilities also removed payables, deferred revenue, leases etc.,
+    # which the operating cash flow already accounts for. Falls back to
+    # total liabilities only when no debt figure was extracted.
+    debt = cur.get("lt_debt")
+    if debt is None:
+        debt = cur.get("total_liab") or 0
+    equity = pv - debt + (cur.get("cash") or 0)
     return {"fair_value": equity / shares, "wacc": wacc, "growth": growth,
             "terminal_growth": terminal_growth, "base_fcf": fcf}
 
@@ -463,6 +470,11 @@ def get_scores(store, symbol: str, price: float | None = None,
     # Profile supplies what statements can't: industry (model selection),
     # CURRENT shares outstanding (statements carry period-weighted ones)
     # and market cap (Altman's market-value term, no price×shares proxy).
+    # Piotroski's dilution test compares like with like: statement
+    # (weighted-average) shares this year vs last year. Run it BEFORE the
+    # profile's current share count replaces cur["shares"] below.
+    pio = piotroski(cur, prev or {})
+
     profile = fetch_profile(symbol)
     industry = profile.get("finnhubIndustry")
     shares = None
@@ -482,7 +494,6 @@ def get_scores(store, symbol: str, price: float | None = None,
     if shares:
         cur = dict(cur, shares=shares)
 
-    pio = piotroski(cur, prev or {})
     if pio["score"] is None:
         notes.append("Piotroski: insufficient data")
     elif pio["evaluated"] < 9:

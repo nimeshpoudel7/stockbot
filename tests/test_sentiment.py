@@ -1,6 +1,7 @@
 """Tests for sentiment.py: lexicon scoring, aggregation, rating math, cache,
 analyst recommendations, and scanner integration."""
 import unittest
+from tests.test_scanner import BUY_CLOSES, SELL_CLOSES  # noqa: E402
 from unittest.mock import MagicMock, patch
 
 import sentiment
@@ -529,7 +530,7 @@ class TestScannerIntegration(unittest.TestCase):
         return Store(":memory:")
 
     def _bars(self):
-        closes = [100.0] * 245 + [160.0] * 5
+        closes = BUY_CLOSES
         bars = []
         for i, c in enumerate(closes):
             v = 5_000_000.0 if i == len(closes) - 1 else 1_000_000.0
@@ -568,9 +569,10 @@ class TestScannerIntegration(unittest.TestCase):
         title, body = push.call_args[0]
         # combined sentiment 0.8 -> +1.2 contribution, shown as signal line
         self.assertIn("news: +0.8 | analysts: 14 buy / 4 hold / 1 sell", body)
-        # base tech score for this fixture is 28 -> 2.8/10, +1.2 -> 4.0/10
-        self.assertIn("4.0/10", body)
-        self.assertIn("4.0/10", title)
+        # base tech score 28 of the 28-point BUY watch scale -> 10.0/10;
+        # +1.2 from sentiment is clamped at 10.0
+        self.assertIn("10.0/10", body)
+        self.assertIn("10.0/10", title)
 
     def test_watch_mode_no_signal_no_line(self):
         import scanner
@@ -586,7 +588,7 @@ class TestScannerIntegration(unittest.TestCase):
         _, body = push.call_args[0]
         self.assertNotIn("news:", body)
         self.assertNotIn("analysts:", body)
-        self.assertIn("2.8/10", body)  # unadjusted rating
+        self.assertIn("10.0/10", body)  # unadjusted: 28 of 28
 
     def test_run_scan_candidate_gets_sentiment(self):
         import scanner
@@ -609,7 +611,9 @@ class TestScannerIntegration(unittest.TestCase):
         self.assertEqual(c["sentiment_n"], 3)
         _, body = push.call_args[0]
         self.assertIn("news: +0.8 | analysts: 14 buy / 4 hold / 1 sell", body)
-        self.assertIn("4.0/10", body)
+        # tech 28/28 with neutral fundamentals -> 10.0/10 (same as watch);
+        # +1.2 from sentiment is clamped at 10.0
+        self.assertIn("10.0/10", body)
 
     def test_run_scan_only_scores_candidates(self):
         # symbols with no setups never reach the sentiment fetch. The sine

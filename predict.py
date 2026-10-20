@@ -58,6 +58,17 @@ def build_features(bars: list[dict]) -> list[dict]:
     return out
 
 
+def latest_features(bars: list[dict]) -> list[float] | None:
+    """Feature vector for the most recent bar (None if not warmed up)."""
+    if not bars:
+        return None
+    row = build_features(bars)[-1]
+    vals = [row[f] for f in FEATURES]
+    if any(v is None for v in vals):
+        return None
+    return [float(v) for v in vals]
+
+
 def dataset(bars: list[dict]) -> tuple[list[list[float]], list[int]]:
     """Feature matrix X and labels y (up-move over next 5 sessions).
 
@@ -80,13 +91,21 @@ def dataset(bars: list[dict]) -> tuple[list[list[float]], list[int]]:
     return X, y
 
 
+HORIZON = 5  # label looks this many sessions ahead
+
+
 def walk_forward_splits(n: int, train: int = TRAIN_WINDOW,
-                        test: int = TEST_WINDOW):
-    """Yield (train_idx, test_idx) rolling windows over n rows."""
+                        test: int = TEST_WINDOW, gap: int = HORIZON):
+    """Yield (train_idx, test_idx) rolling windows over n rows.
+
+    ``gap`` rows are skipped between train and test: the last training
+    labels look HORIZON sessions ahead, i.e. into the test window, which
+    leaked future prices and inflated the hit rate.
+    """
     start = 0
     while True:
         tr0, tr1 = start, start + train
-        te0, te1 = tr1, tr1 + test
+        te0, te1 = tr1 + gap, tr1 + gap + test
         if te1 > n:
             break
         yield list(range(tr0, tr1)), list(range(te0, te1))
@@ -157,8 +176,11 @@ def train_symbol(symbol: str, daily_bars_fn, min_rows: int = 300) -> dict:
                          f"(need {min_rows})")
     wf = walk_forward(X, y)
     clf = train_final(X, y)
-    # probability for the latest bar
-    proba_up = float(clf.predict_proba([X[-1]])[0][1])
+    # probability for the LATEST bar. X only holds labelled rows, so X[-1]
+    # is the bar 6 sessions ago; score today's features instead.
+    latest = latest_features(bars)
+    proba_up = (float(clf.predict_proba([latest])[0][1])
+                if latest is not None else None)
     payload = {
         "symbol": symbol.upper(),
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -202,7 +224,9 @@ def main() -> None:
           f"({wf['tested']} test months)")
     hr = wf["hit_rate"]
     print(f"hit rate:    {hr:.1%}" if hr is not None else "hit rate:    n/a")
-    print(f"P(up 5 sessions, latest bar): {payload['latest_proba_up']:.1%}")
+    p = payload["latest_proba_up"]
+    print("P(up 5 sessions, latest bar): "
+          + (f"{p:.1%}" if p is not None else "n/a (latest bar not warmed up)"))
     print("This is an experimental signal with the hit rate shown above; "
           "it is not a recommendation.")
 

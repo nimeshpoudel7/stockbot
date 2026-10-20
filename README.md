@@ -181,42 +181,75 @@ dollar volume over the last 20 days**. This drops dead tickers while
 keeping penny stocks — a $0.40 stock trading 2M shares/day passes; a $50
 stock nobody touches does not.
 
-**Scoring weights** (each side capped at 100):
+**How the scanner reads a chart** (rebuilt Oct 20, 2026 — see
+`study_trader_signals.py` for the validation): trend context first, then
+where price sits in that trend, then confirmation, then risk. Every
+playbook scores 0–100, BUY and SELL on the same scale.
 
-Bullish (buy setups):
+**BUY — two playbooks** (a stock's BUY score is the stronger one):
 
-| setup | condition | pts |
-|---|---|---|
-| oversold_bounce | RSI(14) < 30 and turning up | 25 |
-| bollinger_squeeze | bandwidth at 126-day low | 20 |
-| volume_spike | last volume > 2× 20-day median, green day | 15 |
-| breakout_watch | close within 2% below 52-week high | 15 |
-| golden_cross | SMA50 crossed above SMA200 in last 5 days | 15 |
-| trend bonus | close > SMA200 / SMA50 > SMA200 | +5/+5 |
-
-Bearish (sell setups):
+*Dip* — buy weakness (mean reversion). Worked best in pullbacks and
+corrections:
 
 | setup | condition | pts |
 |---|---|---|
-| overbought_breakdown | RSI(14) > 70 and turning down | 25 |
-| bollinger_breakdown | close below lower Bollinger band (20, 2σ) | 20 |
-| volume_spike_down | last volume > 2× 20-day median, red day | 15 |
-| low52_breakdown | close within 2% above 52-week low | 15 |
-| death_cross | SMA50 crossed below SMA200 in last 5 days | 15 |
-| atr_selloff | single-day drop > 2× ATR(14) | 10 |
+| oversold_rsi30 / _rsi35 | RSI(14) < 30 / < 35 | 40 / 25 |
+| below_lower_band | close under the lower Bollinger band of the prior 20 days | 20 |
+| stretched_below_sma20 | close more than 2× ATR below the 20-day average | 15 |
+| capitulation_volume | RSI < 35 on volume > 2× the 20-day median | 25 |
 
-A symbol is labeled **BUY** when its bullish score ≥ bearish score, else
-**SELL** (ties go bullish).
+*Momentum* — buy strength (leaders). Worked best in steady bull runs:
+
+| setup | condition | pts |
+|---|---|---|
+| leader_rs20 / _rs10 | 3-month return beats SPY by > 20 / > 10 points | 30 / 15 |
+| extended15 / _10 | close > 15% / > 10% above the 50-day | 20 / 10 |
+| volume_up_day | volume > 2× median, close ≥ open | 20 |
+| breakout20_volume | close above the prior 20-day high, top 30% of the day's range, volume ≥ 1.5× | 15 |
+| uptrend | above a rising 200-day, 50-day above 200-day | 15 |
+
+**SELL — sell strength inside the stock's own downtrend** (sell the rip):
+
+| setup | condition | pts |
+|---|---|---|
+| rally_in_downtrend | downtrend and close > 2× ATR above the 20-day | 40 |
+| overbought_below_200 | RSI(14) > 70 while below the 200-day | 30 |
+| short_term_overbought_dn | downtrend and RSI(2) > 90 | 20 |
+| downtrend | below a falling 200-day, 50 < 200 (only adds to a setup) | 10 |
+
+**Push bars** (technical score; fundamentals and sentiment only rank and
+rate): BUY dip **60**, BUY momentum **75**, SELL **40**. The SPY regime
+picks the favoured BUY playbook — bull market: dip bar 75; sideways/bear:
+momentum bar 90 — and in a bear regime the SELL bar is 90 (bear-market
+rallies squeezed shorts). Every alert carries an **ATR stop and target**
+(stop 2× ATR, target 3× ATR), e.g.
+`BUY: XYZ @ $42.10 — 8.4/10 — dip buy; RSI 27 — deeply oversold; …; stop $39.30 · target $46.30`.
+
+**What the data threw out** (and why some rules look "backwards"): on
+~3.5 years of real daily bars (S&P 500 + a random liquid small/mid-cap
+sample, entry at the next open), buying near the 52-week high lost
+(−0.4% vs random days over 10 sessions), plain uptrend / MACD / RSI 60–80
+did nothing, pullbacks to the 20/50-day did nothing, and **every
+"sell weakness" rule** — breakdowns, lower-band closes, heavy-volume red
+days, death crosses, oversold — **lost money as a short**: weak stocks
+bounced. Selling into oversold was the single worst signal, so SELL only
+ever fires on strength.
+
+**Validated results** of the pushed signals (10 sessions, vs random days):
+S&P 500 BUY +0.6% (58% winners), SELL +1.1% (55%); small/mid BUY +0.4%
+(55%), SELL +0.6% (53%). Both halves of the window positive for every
+group. (The old rules on the same data: BUY −0.3% / −0.4%, SELL +0.2% /
+−0.9%.) Baseline
+win rate is ~52%: these **tilt the odds, they are not certainties** —
+use the stop.
 
 Fundamental bonus (−25…+25): Piotroski ≥8 +10 / 6–7 +5 / ≤2 −10; Altman safe
 +5 / distress −10; DCF ≥20% below fair value +10 / >20% above −5. The sell
-side uses the mirror (weak fundamentals *add* to a sell score: Piotroski ≤2
-+10, Altman distress +10, price >20% above DCF fair +10; strong fundamentals
-subtract). Composite = technical + bonus; only candidates ≥ 45 are pushed.
+side uses the mirror. It ranks candidates and moves the /10 rating by at
+most ±2; it never decides whether a setup is pushed.
 
-**Parity with the 39-symbol alert engine:** the scanner runs the *same
-indicator math* (RSI, Bollinger, SMA crosses, 52-week extremes, volume
-spikes, ATR) — but on **daily bars, every 15 minutes, across the whole
+**Parity with the 39-symbol alert engine:** the scanner uses the *same
+indicator math* (RSI, Bollinger, SMAs, ATR, volume) — but on **daily bars, every 15 minutes, across the whole
 universe**, while the engine evaluates **per-tick on streaming data** for
 your 39 watchlist symbols. Engine-only features the scanner does not
 replicate: your personal price-level alerts, intraday %-move alerts, and
@@ -231,8 +264,12 @@ Run manually: `python -m scanner` (scan + push) or
 `python -m scanner --dry-run` (print the ranked list, no push).
 
 **Ratings:** every setup shown to the user carries a rating out of 10 with
-one decimal (e.g. `6.8/10`) derived from the internal 0–100 composite score
-— display-only; all internal scores and thresholds stay 0–100.
+one decimal (e.g. `6.8/10`): the technical score as a fraction of **its
+own side's scale** (BUY out of 28, SELL out of 100), so a full-strength
+BUY and a full-strength SELL both read 10.0/10 — in the morning list and
+in watch mode alike. In the morning scan the fundamental bonus then moves
+it by up to ±2 (Piotroski/Altman/DCF; no data = neutral, no change).
+Display-only; internal scores and push bars stay raw points.
 
 **Sentiment overlay** (`sentiment.py`) — two free Finnhub signals, candidates
 only (never the full universe), each leg cached 24h in SQLite:
@@ -248,8 +285,9 @@ only (never the full universe), each leg cached 24h in SQLite:
 Combined total = 0.65 × news + 0.35 × analyst (news-heavier — analyst
 consensus skews bullish, since almost nobody rates "sell"). It shifts
 the /10 rating by
-total × 1.5 (clamped to [0, 10]) — a buy setup on glowing news and bullish
-analysts can show 7.8/10 instead of 6.8/10. Each alert shows the breakdown,
+total × 1.5 (clamped to [0, 10]), signed by side: good news raises a BUY
+and lowers a SELL, bad news does the reverse — a buy setup on glowing news
+and bullish analysts can show 7.8/10 instead of 6.8/10. Each alert shows the breakdown,
 e.g. `news: +0.6 | analysts: 31 buy / 4 hold / 1 sell` (Strong Buy folds
 into buy, Strong Sell into sell). No coverage on either leg → no sentiment
 line, rating unchanged. Fetch failures degrade to neutral and are cached,
@@ -258,11 +296,13 @@ so a dead feed never hammers the API or crashes a scan.
 **Watch mode** — `python -m scanner --watch` (or `--watch --dry-run`):
 re-runs the technical screen over the universe and pushes an ntfy alert
 **immediately** when a symbol *newly* matches the setup rules
-(bull score ≥ 30 → **"BUY SETUP: XYZ @ $1.23 — 6.8/10 — oversold bounce,
-RSI 28, volume 2.4x"**; bear score ≥ 30 → **"SELL SETUP: …"**; single
-weak setups ignored as noise). Dedupe: flagged symbols persist in SQLite
-(`scanner_watch_seen`) — one alert per symbol per trading day; the morning
-scan resets the list. No fundamentals in watch mode (keeps it fast and
+(bull score ≥ 20, e.g. uptrend + near 52-week high → **"BUY SETUP: XYZ
+@ $12.30 — 7.1/10 — within 1.2% of 52-week high; in uptrend"**; bear score
+≥ 30 → **"SELL SETUP: …"**; single weak setups ignored as noise). Dedupe:
+flagged symbols persist in SQLite (`scanner_watch_seen`) — one alert per
+symbol per side per trading day, recorded only after the push succeeds
+(a failed push retries next pass; `--dry-run` never touches the list).
+The morning scan resets the list. No fundamentals in watch mode (keeps it fast and
 free-tier-safe). Guards: weekdays + trading day + 09:30–16:00 ET from the
 sessions.py calendar — exits quietly otherwise.
 

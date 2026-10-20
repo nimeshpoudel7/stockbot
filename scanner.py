@@ -17,42 +17,56 @@ Pipeline
    (PUSH_MIN_PRICE): penny names are exactly where volume spikes and
    breakouts are noisiest, so they never reach the phone.
 4. Technical screen on 300 daily bars per symbol (Alpaca REST, multi-symbol
-   batches of 100). Bullish and bearish setups are scored separately
-   (weights below; each side's raw sum is capped at 100, but note the
-   scales differ — bull setups sum to at most 28, bear setups to 100):
+   batches of 100), read the way a trader reads a chart: trend context
+   first, then where price sits in it, then confirmation, then risk.
+   Signals were rebuilt Oct 20, 2026 and validated on ~3.5 years of real
+   daily bars (465 S&P 500 names + 360 random liquid small/mid caps,
+   entry at the NEXT open, 10-session forward returns vs a random-day
+   baseline, both halves of the window checked separately).
 
-   BULLISH (buy setups)
-   | setup            | condition (daily bars, closed candles)      | pts |
-   |------------------|---------------------------------------------|-----|
-   | oversold_bounce  | RSI(14) < 30 and turning up                 |   0 |
-   | bollinger_squeeze| bandwidth at 126-trading-day low            |   0 |
-   | golden_cross     | SMA50 crossed above SMA200 in last 5 days   |   0 |
-   | volume_spike     | last volume > 2x 20-day median, green day   |   8 |
-   | breakout_watch   | close within 2% below 52-week high          |   9 |
-   | uptrend          | close > SMA200 AND SMA50 > SMA200           |  11 |
+   BUY has two playbooks; a symbol's BUY score is the stronger of them.
 
-   (Weights re-fit Oct 20, 2026 from the setup evidence studies: trend
-   carried the edge; oversold_bounce and bollinger_squeeze scored 0.
-   Round 2 showed the three trend signals are one fact — 87-89% co-fire,
-   and the golden cross adds nothing once the uptrend is known — so they
-   merged into a single `uptrend` worth 11 and the cross dropped to 0.
-   All zero-weight setups are still detected and shown; they just add
-   no points.)
+   DIP (buy weakness — mean reversion; strongest in pullbacks/corrections)
+   | setup                 | condition                                  | pts |
+   |-----------------------|--------------------------------------------|-----|
+   | oversold_rsi30        | RSI(14) < 30                               |  40 |
+   | oversold_rsi35        | RSI(14) < 35 (if not < 30)                 |  25 |
+   | below_lower_band      | close < lower Bollinger band (prior 20)    |  20 |
+   | stretched_below_sma20 | close > 2x ATR(14) below SMA20             |  15 |
+   | capitulation_volume   | RSI(14) < 35 AND volume > 2x 20d median     |  25 |
 
-   BEARISH (sell setups)
-   | setup               | condition                                   | pts |
-   |---------------------|---------------------------------------------|-----|
-   | overbought_breakdown| RSI(14) > 70 and turning down               |  25 |
-   | bollinger_breakdown | close below lower Bollinger band (20, 2σ)   |  20 |
-   | volume_spike_down   | volume > 2x 20-day median, red day          |  15 |
-   | low52_breakdown     | close within 2% above 52-week low           |  15 |
-   | death_cross         | SMA50 crossed below SMA200 in last 5 days   |  15 |
-   | atr_selloff         | single-day drop > 2x ATR(14)                |  10 |
+   MOMENTUM (buy strength — leaders; strongest in steady bull runs)
+   | setup             | condition                                      | pts |
+   |-------------------|------------------------------------------------|-----|
+   | leader_rs20       | 63-day return beats SPY by > 20 pts            |  30 |
+   | leader_rs10       | ... by > 10 pts (if not > 20)                  |  15 |
+   | extended15        | close > 15% above SMA50                        |  20 |
+   | extended10        | close > 10% above SMA50 (if not > 15%)         |  10 |
+   | volume_up_day     | volume > 2x 20d median, close >= open          |  20 |
+   | breakout20_volume | close > prior 20-day high, top 30% of range,   |  15 |
+   |                   | volume >= 1.5x median                          |     |
+   | uptrend           | close > SMA200 > rising, SMA50 > SMA200        |  15 |
 
-   A symbol is classified BUY when its bull score AS A FRACTION OF THE
-   BULL SCALE (score / 28) is >= the bear score's fraction of the bear
-   scale (score / 100), else SELL (ties go bullish). Raw sums are never
-   compared across scales — that tilted borderline names toward SELL.
+   SELL (sell strength in a stock that is in its OWN downtrend)
+   | setup                     | condition                              | pts |
+   |---------------------------|----------------------------------------|-----|
+   | rally_in_downtrend        | downtrend AND close > 2x ATR above     |  40 |
+   |                           | SMA20 (a rip into resistance)          |     |
+   | overbought_below_200      | RSI(14) > 70 while below SMA200        |  30 |
+   | short_term_overbought_dn  | downtrend AND RSI(2) > 90              |  20 |
+   | downtrend                 | close < SMA200 < falling, SMA50 < 200  |  10 |
+
+   What the evidence threw out (and why the rules look "backwards" in
+   places): buying near the 52-week high (-0.4% vs baseline), plain
+   uptrend / MACD / RSI 60-80 (~0), pullbacks to SMA20/50 (~0 or worse),
+   and EVERY "sell weakness" rule — breakdowns, lower-band closes,
+   heavy-volume red days, oversold — lost money as shorts (-0.4% to
+   -1.6%): weak stocks bounced. Selling into oversold is the single
+   worst signal measured, so SELL rules only ever fire on strength.
+
+   A symbol is classified BUY when its BUY score >= its SELL score (both
+   are 0-100 now), else SELL.
+
 5. Fundamental overlay for the top ~25 scorers per side
    (fundamentals.py, 24h cache; missing data scores 0, never fetched for
    the whole universe). Bullish: Piotroski/Altman/DCF as documented;
@@ -75,8 +89,10 @@ Guards: weekdays + trading day + 09:30-16:00 ET via the sessions.py
 calendar; exits quietly otherwise.
 
 Display: every setup shown to the user carries a rating out of 10 with one
-decimal (e.g. 6.8/10) derived from the internal 0-100 composite score via
-_rating() — display-only; all internal scores and thresholds stay 0-100.
+decimal (e.g. 6.8/10): the technical score as a fraction of its own
+side's scale, plus up to +/-2 for the fundamental bonus (neutral when
+absent) and the sentiment shift (side_rating) — display-only; internal
+scores and thresholds stay raw.
 
 Sentiment (sentiment.py): ranked candidates (morning scan) and newly
 matched symbols (watch mode) get a sentiment overlay from two free Finnhub
@@ -97,27 +113,25 @@ Friday scan flags Monday earnings.) Data: Finnhub /calendar/earnings,
 cached per symbol for 24h in poller_state (key earnings_<SYM>); any
 failure (no key, API error) means no flag, never a broken scan.
 
-Push bars are EXPLICIT raw values, calibrated to setup combinations
-(morning on the composite, watch on the tech score): morning buy 20 /
-sell 50, watch buy 20 / sell 30. Buy bar 20 = uptrend (11) +
-breakout_watch (9), or two setups plus fundamental help — a single
-setup never pushes. The bars used to be fractions of each side's scale
-(40% morning / 30% watch), but that quantized badly on the coarse bull
-scale (only three scored setups, max 28): the morning buy bar landed
-at 21 — secretly all three setups, since 11 + 9 = 20 < 21 — and the
-watch buy bar landed at 8, BELOW the single uptrend weight, so the
-first live watch pass on Oct 20 matched 2,002 buy names and hammered
-Finnhub into 429s. Fractions were dropped for bars; classify_side
-still compares score fractions across the two scales, which is where
-normalization actually matters.
+Push bars (technical score, 0-100; the fundamental overlay only ranks and
+rates, it never decides the push): BUY dip 60, BUY momentum 75, SELL 40.
+Regime decides which BUY playbook gets the easier bar — dips worked in
+corrections but stopped working in the 2025-26 bull run, momentum did
+the reverse: bull regime raises the dip bar to 75; sideways/bear raises
+the momentum bar to 90. SELL works on stock-specific downtrends inside
+bull/sideways markets; in a market-wide bear regime its bar rises to 90
+(bear-market rallies squeezed shorts in the one bear episode sampled).
+Validated edge of the pushed signals (production code, 10 sessions, vs
+same-regime random days): S&P 500 BUY +0.6% (58% winners), SELL +1.1%
+(55%); small/mid BUY +0.4% (55%), SELL +0.6% (53%); both halves of the
+window positive. Baseline win rate ~52%. These are tilts
+of the odds, not certainties. Every alert carries an ATR(14) stop
+(2x ATR) and target (3x ATR).
 
-Regime gate (push only): when the market regime (regime.py, SPY vs
-SMA200) fights a side — bear regime for buys, bull regime for sells,
-sideways for BOTH — that side's push bar rises by raw points (buy +5,
-sell +15, same for morning and watch). Effective bars: morning buy
-20 -> 25, sell 50 -> 65; watch buy 20 -> 25, sell 30 -> 45. The full
-dashboard lists are never gated: every setup persists with its true
-score/rating. Unknown regime → no gating (fail open).
+Regime (regime.py, SPY vs SMA200 + slope) only shifts the BUY playbook
+bars as described above; unknown regime -> base bars (fail open). The
+full dashboard lists are never gated: every setup persists with its
+true score/rating.
 
 Parity with the 39-symbol alert engine: the scanner runs the SAME indicator
 math (RSI, Bollinger, SMA crosses, 52-week extremes, volume spikes, ATR)
@@ -174,29 +188,28 @@ log = logging.getLogger("stockbot.scanner")
 # ---------------------------------------------------------------------------
 # Scoring weights (kept as data so tests can assert the documented values)
 # ---------------------------------------------------------------------------
-WEIGHTS = {  # bullish side (kept under the historic name for compatibility)
-    # Re-weighted Oct 20, 2026 from the setup evidence studies
-    # (17,869 events, Jul 2025-Sep 2026). Trend carried the edge;
-    # oversold bounce and Bollinger squeeze showed no edge and carry 0.
-    # Round 2 (round2-evidence-study.md) showed the three trend setups
-    # co-fire 87-89% of the time and the golden cross adds nothing once
-    # the uptrend is known — merged into one `uptrend` worth 11, and
-    # golden_cross dropped to 0. Zero-weight setups are still detected
-    # and shown; they just add no score.
-    "oversold_bounce": 0,
-    "bollinger_squeeze": 0,
-    "golden_cross": 0,
-    "volume_spike": 8,
-    "breakout_watch": 9,
-    "uptrend": 11,
+DIP_WEIGHTS = {  # BUY playbook 1: buy weakness (mean reversion)
+    "oversold_rsi30": 40,
+    "oversold_rsi35": 25,          # exclusive with oversold_rsi30
+    "below_lower_band": 20,
+    "stretched_below_sma20": 15,
+    "capitulation_volume": 25,
 }
-BEAR_WEIGHTS = {  # bearish side
-    "overbought_breakdown": 25,
-    "bollinger_breakdown": 20,
-    "volume_spike_down": 15,
-    "low52_breakdown": 15,
-    "death_cross": 15,
-    "atr_selloff": 10,
+MOMENTUM_WEIGHTS = {  # BUY playbook 2: buy strength (leaders)
+    "leader_rs20": 30,
+    "leader_rs10": 15,             # exclusive with leader_rs20
+    "extended15": 20,
+    "extended10": 10,              # exclusive with extended15
+    "volume_up_day": 20,
+    "breakout20_volume": 15,
+    "uptrend": 15,
+}
+WEIGHTS = {**DIP_WEIGHTS, **MOMENTUM_WEIGHTS}  # all bullish setups
+BEAR_WEIGHTS = {  # SELL: strength inside a downtrend
+    "rally_in_downtrend": 40,
+    "overbought_below_200": 30,
+    "short_term_overbought_dn": 20,
+    "downtrend": 10,
 }
 TECH_CAP = 100
 BEAR_CAP = 100
@@ -210,38 +223,31 @@ SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboa
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
 WATCH_PUSH_MAX = 15        # cap symbols listed in one watch push
 
-# --- Push bars: explicit raw values (calibrated to setup combinations) -----
-# classify_side still compares each side's score AS A FRACTION of its own
-# scale (bull max 28 vs bear max 100) — normalization matters for that
-# cross-scale comparison, and it stays. The push BARS, however, are raw
-# points. They used to be fractions of each side's scale (morning 40%,
-# watch 30%, regime gate +15%), but fractions quantize badly on the
-# coarse bull scale, which has only three scored setups (uptrend 11,
-# breakout_watch 9, volume_spike 8; goldens/bounces/squeezes score 0):
-#   * morning 40% x (28 tech + 25 bonus) = 21 secretly required ALL THREE
-#     setups — uptrend + breakout alone is 11 + 9 = 20 < 21
-#   * watch 30% x 28 = 8 sat BELOW the single uptrend weight, so the
-#     first live watch pass (Oct 20) matched 2,002 buy names and drove
-#     Finnhub sentiment calls into 429s
-# Raw calibration (morning is on the composite, watch on tech alone):
-#   morning buy 20 = uptrend + breakout, or two setups + fundamental help
-#   morning sell 50 ~ three stacked bear setups
-#   watch buy 20 / sell 30 — same idea without the fundamental overlay
-# The regime gate adds RAW points to the fighting side's bar (sideways
-# gates both): buy +5, sell +15, morning and watch alike — so the gated
-# bars are morning 25/65 and watch 25/45.
-BULL_TECH_MAX = sum(WEIGHTS.values())        # 28 — derived, never hardcoded
-BEAR_TECH_MAX = sum(BEAR_WEIGHTS.values())   # 100 — derived, never hardcoded
-# Informational ceilings only (the scale the old fraction bars used);
-# bars no longer derive from these.
+# --- Scales and push bars ---------------------------------------------------
+# Every playbook scores 0-100, so BUY and SELL share one scale and the
+# /10 rating is simply score / 10 (before fundamentals and sentiment).
+# Bars are on the technical score; see the module docstring for the
+# validation numbers behind them.
+BULL_TECH_MAX = 100   # each BUY playbook tops out at 100
+BEAR_TECH_MAX = 100
+# Fundamental bonus ceilings: push bars no longer derive from these; the
+# /10 rating maps a bonus onto ±FUND_RATING_MAX with them (side_rating).
 FUND_BONUS_MAX = 25    # fundamental_bonus ceiling: Piotroski +10, Altman +5, DCF +10
 SHORT_BONUS_MAX = 30   # short_bonus ceiling: Piotroski +10, Altman +10, DCF +10
-MORNING_BUY_BAR = 20    # composite: uptrend + breakout, or 2 setups + funds
-MORNING_SELL_BAR = 50   # composite: ~three stacked bear setups
-WATCH_BUY_BAR = 20      # tech only (watch runs no fundamental overlay)
-WATCH_SELL_BAR = 30     # tech only
-GATE_BUY_BONUS = 5      # raw points added to a regime-fighting buy bar
-GATE_SELL_BONUS = 15    # raw points added to a regime-fighting sell bar
+# Push bars on the TECHNICAL score (0-100), same for morning and watch.
+BUY_BARS = {"dip": 60, "momentum": 75}
+SELL_BAR = 40
+# Regime picks the BUY playbook: the out-of-favour one needs this extra.
+REGIME_BUY_PENALTY = 15   # bull: dip 75 · sideways/bear: momentum 90
+# Bear regime: SELL bar 90 (effectively paused). The only bear-regime
+# sample (Apr-May 2025: SPY's 200-day still falling while the market
+# ripped off the low) saw "sell the rip" lose ~1-2% / 13-28% winners in
+# both universes — bear-market rallies squeeze shorts. One episode, so
+# treat as a caution, not a law.
+REGIME_SELL_PENALTY_BEAR = 50
+STOP_ATR = 2.0            # stop distance in ATR(14) multiples
+TARGET_ATR = 3.0          # target distance in ATR(14) multiples
+RS_LOOKBACK = 63          # sessions for relative strength vs SPY
 PUSH_MIN_PRICE = 3.0       # pushes require price >= $3.00; the persisted
                            # dashboard lists are NOT price-filtered
 BARS_BATCH_SIZE = 100      # symbols per Alpaca multi-bars call
@@ -333,7 +339,10 @@ class AlpacaREST:
         """
         out: dict[str, list[dict]] = {}
         end = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=16)
-        start = end - dt.timedelta(days=days + 30)
+        # `days` is a SESSION count: ~252 sessions per 365 calendar days.
+        # (days + 30 calendar days gave ~228 sessions for days=300, so the
+        # "52-week" high/low really covered ~11 months.)
+        start = end - dt.timedelta(days=int(days * 365 / 252) + 15)
         for i in range(0, len(symbols), 100):
             chunk = symbols[i:i + 100]
             params = {"symbols": ",".join(chunk), "timeframe": "1Day",
@@ -552,21 +561,88 @@ def _rating(score: float) -> str:
     return f"{max(0.0, min(score, 100.0)) / 10.0:.1f}/10"
 
 
+FUND_RATING_MAX = 2.0  # most a full fundamental bonus can move the /10 rating
+
+
+def side_scale(side: str) -> int:
+    """Max technical score for a side (BUY 28, SELL 100)."""
+    return BULL_TECH_MAX if side == "BUY" else BEAR_TECH_MAX
+
+
+def side_rating(tech: float, side: str, sent: float = 0.0,
+                bonus: float = 0.0) -> str:
+    """X.X/10 display rating for a BUY or SELL setup.
+
+    rating = technical score as a fraction of ITS OWN SIDE'S tech scale
+             (0–10; a perfect BUY 28/28 and a perfect SELL 100/100 both
+             read 10.0)
+           + fundamental bonus as a fraction of its own max, worth up to
+             ±FUND_RATING_MAX (morning scan only; watch has no overlay)
+           + sentiment × 1.5, signed by side
+    clamped to [0, 10].
+
+    Fundamentals start from NEUTRAL: no data or a 0 bonus leaves the
+    technical rating untouched (it used to count the 25 possible bonus
+    points as missing, so a perfect tech-only BUY read 5.3/10 in the
+    morning list but 10.0/10 in watch mode). Rating raw points read a
+    perfect BUY as 2.8/10 against 3.0/10 for a one-signal SELL.
+
+    Sentiment: good news raises a BUY and LOWERS a SELL (it argues
+    against the short); bad news does the reverse.
+    """
+    rating10 = max(0.0, min(10.0, tech / side_scale(side) * 10.0))
+    bonus_max = FUND_BONUS_MAX if side == "BUY" else SHORT_BONUS_MAX
+    rating10 += max(-1.0, min(1.0, bonus / bonus_max)) * FUND_RATING_MAX
+    rating10 = max(0.0, min(10.0, rating10))
+    signed = sent if side == "BUY" else -sent
+    return sentiment.adjusted_rating_str(rating10 * 10.0, signed)
+
+
+def _trend_context(closes: list[float]) -> str | None:
+    """'up' | 'down' | None — the chart's trend before anything else.
+
+    up:   close > SMA200, SMA50 > SMA200, SMA200 rising over 20 sessions
+    down: close < SMA200, SMA50 < SMA200, SMA200 falling over 20 sessions
+    """
+    if len(closes) < 220:
+        return None
+    s50, s200 = indicators.sma(closes, 50), indicators.sma(closes, 200)
+    s200_prev = indicators.sma(closes[:-20], 200)
+    c = closes[-1]
+    if c > s200 and s50 > s200 and s200 > s200_prev:
+        return "up"
+    if c < s200 and s50 < s200 and s200 < s200_prev:
+        return "down"
+    return None
+
+
+def risk_levels(price: float, atr14: float | None,
+                side: str) -> tuple[float, float] | None:
+    """(stop, target) from ATR(14): stop STOP_ATR x ATR against the trade,
+    target TARGET_ATR x ATR in its favour (1.5 : 1 reward/risk)."""
+    if not atr14 or atr14 <= 0:
+        return None
+    if side == "BUY":
+        return price - STOP_ATR * atr14, price + TARGET_ATR * atr14
+    return price + STOP_ATR * atr14, price - TARGET_ATR * atr14
+
+
 def technical_screen(bars: list[dict],
-                     volume_scale: float = 1.0) -> dict | None:
-    """Score one symbol's daily bars, bullish and bearish. None when there
+                     volume_scale: float = 1.0,
+                     spy_closes: list[float] | None = None) -> dict | None:
+    """Score one symbol's daily bars like a chart reader. None when there
     isn't enough history.
 
-    Returns {price, tech_score, setups:[(name, pts, reason)] (bullish, kept
-    for compatibility), bear_score, bear_setups:[(name, pts, reason)],
-    indicators:{...}}. A symbol's side is decided by classify_side,
-    which compares each score as a fraction of its own scale.
+    Returns {price, tech_score, setups:[(name, pts, reason)] (the winning
+    BUY playbook's setups), playbook ('dip' | 'momentum' | None),
+    bear_score, bear_setups, trend ('up' | 'down' | None), levels
+    {BUY: (stop, target), SELL: (stop, target)}, indicators:{...}}.
 
     volume_scale (< 1 only in watch mode, where the last bar is today's
-    PARTIAL session): the volume-spike conditions compare today's volume
-    against 2 x median x volume_scale — the volume expected by this time
-    of day. RSI and close-vs-open keep as-of-now semantics (they read the
-    forming bar as it stands); the morning scan always passes 1.0.
+    PARTIAL session): volume conditions compare today's volume with
+    multiple x median x volume_scale — the volume expected by now.
+    spy_closes (oldest-first, same end date) enables relative strength;
+    without it the leader setups simply don't fire.
     """
     if len(bars) < MIN_TECH_BARS:
         return None
@@ -574,136 +650,159 @@ def technical_screen(bars: list[dict],
     highs = [b["h"] for b in bars]
     lows = [b["l"] for b in bars]
     vols = [b["v"] for b in bars]
-    opens = [b["o"] for b in bars]
-    price = closes[-1]
-    green_day = closes[-1] >= opens[-1]
-    red_day = closes[-1] < opens[-1]
-    setups: list[tuple[str, int, str]] = []       # bullish
-    bear_setups: list[tuple[str, int, str]] = []  # bearish
+    price, open_ = closes[-1], bars[-1]["o"]
+    hi, lo = highs[-1], lows[-1]
     ind: dict = {}
 
-    # --- RSI --------------------------------------------------------------
-    rsi = indicators.rsi_wilder(closes)
-    rsi_now, rsi_prev = rsi[-1], rsi[-2]
-    ind["rsi"] = rsi_now
-    if (rsi_now is not None and rsi_prev is not None
-            and rsi_now < 30 and rsi_now > rsi_prev):
-        setups.append(("oversold_bounce", WEIGHTS["oversold_bounce"],
-                       f"RSI {rsi_now:.0f} turning up from oversold"))
-    if (rsi_now is not None and rsi_prev is not None
-            and rsi_now > 70 and rsi_now < rsi_prev):
-        bear_setups.append(("overbought_breakdown",
-                            BEAR_WEIGHTS["overbought_breakdown"],
-                            f"RSI {rsi_now:.0f} rolling over from overbought"))
-
-    # --- Bollinger ----------------------------------------------------------
-    bw_now = indicators.bollinger_bandwidth(closes)
-    ind["bb_bandwidth"] = bw_now
-    if bw_now is not None and len(closes) >= 126 + 20:
-        hist = [indicators.bollinger_bandwidth(closes[: len(closes) - 126 + k])
-                for k in range(127)]
-        hist = [h for h in hist if h is not None]
-        if hist and bw_now <= min(hist) * 1.02:
-            setups.append(("bollinger_squeeze", WEIGHTS["bollinger_squeeze"],
-                           "Bollinger squeeze (bandwidth at 6-month low)"))
-    _, _, bb_lower = indicators.bollinger_bands(closes)
-    ind["bb_lower"] = bb_lower
-    if bb_lower is not None and price < bb_lower:
-        bear_setups.append(("bollinger_breakdown",
-                            BEAR_WEIGHTS["bollinger_breakdown"],
-                            f"closed below lower Bollinger band "
-                            f"({_fmt_price(bb_lower)})"))
-
-    # --- volume spike (direction splits the signal) -------------------------
-    base = vols[-21:-1]
-    if len(base) >= 20:
-        med = statistics.median(base)
-        ind["vol_ratio"] = (vols[-1] / med) if med > 0 else None
-        # volume_scale < 1 (watch mode, partial day) lowers the bar to the
-        # volume expected by now, instead of a full day's median x 2.
-        if med > 0 and vols[-1] > 2 * med * volume_scale:
-            if green_day:
-                setups.append(("volume_spike", WEIGHTS["volume_spike"],
-                               f"volume {vols[-1] / med:.1f}x 20-day median "
-                               f"(up day)"))
-            elif red_day:
-                bear_setups.append(
-                    ("volume_spike_down",
-                     BEAR_WEIGHTS["volume_spike_down"],
-                     f"volume {vols[-1] / med:.1f}x 20-day median "
-                     f"(down day — distribution)"))
-
-    # --- 52-week high / low ---------------------------------------------------
-    lookback = min(252, len(highs))
-    high52 = max(highs[-lookback:])
-    low52 = min(lows[-lookback:])
-    ind["high52"] = high52
-    ind["low52"] = low52
-    if high52 > 0:
-        dist = (high52 - price) / high52
-        ind["dist_to_high52_pct"] = dist * 100
-        if 0 <= dist <= 0.02:
-            setups.append(("breakout_watch", WEIGHTS["breakout_watch"],
-                           f"within {dist * 100:.1f}% of 52-week high"))
-    if low52 > 0:
-        dist_lo = (price - low52) / low52
-        ind["dist_to_low52_pct"] = dist_lo * 100
-        if 0 <= dist_lo <= 0.02:
-            bear_setups.append(("low52_breakdown",
-                                BEAR_WEIGHTS["low52_breakdown"],
-                                f"within {dist_lo * 100:.1f}% of 52-week low"))
-
-    # --- SMA50 / SMA200 crosses -----------------------------------------------
-    sma50 = _sma_now(closes, 50)
-    sma200 = _sma_now(closes, 200)
-    ind["sma50"] = sma50
-    ind["sma200"] = sma200
-    if sma50 is not None and sma200 is not None:
-        if _crossed_up_recently(closes, 50, 200, window=5):
-            setups.append(("golden_cross", WEIGHTS["golden_cross"],
-                           "golden cross (SMA50 crossed above SMA200)"))
-        if _crossed_down_recently(closes, 50, 200, window=5):
-            bear_setups.append(("death_cross", BEAR_WEIGHTS["death_cross"],
-                                "death cross (SMA50 crossed below SMA200)"))
-        if price > sma200 and sma50 > sma200:
-            setups.append(("uptrend", WEIGHTS["uptrend"],
-                           "in uptrend (above 200-day, 50-day above 200-day)"))
-
-    # --- ATR selloff: single-day drop wider than 2x ATR(14) ---------------------
+    trend = _trend_context(closes)
+    ind["trend"] = trend
+    rsi14 = indicators.rsi_wilder(closes, 14)[-1]
+    rsi2 = indicators.rsi_wilder(closes, 2)[-1]
+    ind["rsi"], ind["rsi2"] = rsi14, rsi2
     atr14 = indicators.atr(bars, 14)
     ind["atr14"] = atr14
-    if atr14 and atr14 > 0 and price > 0 and len(closes) >= 2:
-        drop_pct = (closes[-2] - price) / price
-        atr_pct = atr14 / price
-        if drop_pct > 2 * atr_pct:
-            bear_setups.append(("atr_selloff", BEAR_WEIGHTS["atr_selloff"],
-                                f"single-day drop {drop_pct * 100:.1f}% "
-                                f"(>2x ATR {atr_pct * 100:.1f}%)"))
+    sma20 = indicators.sma(closes, 20)
+    sma50 = indicators.sma(closes, 50)
+    sma200 = indicators.sma(closes, 200)
+    ind["sma20"], ind["sma50"], ind["sma200"] = sma20, sma50, sma200
+    # Bollinger from the 20 sessions BEFORE today: "closed outside the
+    # bands" means outside the envelope the market had established.
+    _, bb_up, bb_lo = indicators.bollinger_bands(closes[:-1])
+    ind["bb_upper"], ind["bb_lower"] = bb_up, bb_lo
+    base = vols[-21:-1]
+    med = statistics.median(base) if len(base) >= 20 else None
+    vrel = (vols[-1] / (med * volume_scale)) if med else None
+    ind["vol_ratio"] = (vols[-1] / med) if med else None
+    rng = hi - lo
+    cpos = (price - lo) / rng if rng > 0 else 0.5  # close within day range
+    hi20 = max(highs[-21:-1]) if len(highs) >= 21 else None
+    dist20 = ((price - sma20) / atr14) if (sma20 and atr14) else None
+    ind["dist_sma20_atr"] = dist20
+    rs = None
+    if spy_closes and len(spy_closes) > RS_LOOKBACK and \
+            len(closes) > RS_LOOKBACK and closes[-1 - RS_LOOKBACK] and \
+            spy_closes[-1 - RS_LOOKBACK]:
+        rs = (closes[-1] / closes[-1 - RS_LOOKBACK]
+              - spy_closes[-1] / spy_closes[-1 - RS_LOOKBACK])
+    ind["rs63"] = rs
+    lookback = min(252, len(highs))
+    ind["high52"], ind["low52"] = max(highs[-lookback:]), min(lows[-lookback:])
 
-    tech_score = min(TECH_CAP, sum(p for _, p, _ in setups))
-    bear_score = min(BEAR_CAP, sum(p for _, p, _ in bear_setups))
-    return {"price": price, "tech_score": tech_score,
-            "setups": setups, "bear_score": bear_score,
-            "bear_setups": bear_setups, "indicators": ind}
+    # --- BUY playbook 1: DIP (buy weakness) ---------------------------------
+    dip: list[tuple[str, int, str]] = []
+    if rsi14 is not None and rsi14 < 30:
+        dip.append(("oversold_rsi30", DIP_WEIGHTS["oversold_rsi30"],
+                    f"RSI {rsi14:.0f} — deeply oversold"))
+    elif rsi14 is not None and rsi14 < 35:
+        dip.append(("oversold_rsi35", DIP_WEIGHTS["oversold_rsi35"],
+                    f"RSI {rsi14:.0f} — oversold"))
+    if bb_lo is not None and price < bb_lo:
+        dip.append(("below_lower_band", DIP_WEIGHTS["below_lower_band"],
+                    f"closed below lower Bollinger band ({_fmt_price(bb_lo)})"))
+    if dist20 is not None and dist20 < -2:
+        dip.append(("stretched_below_sma20",
+                    DIP_WEIGHTS["stretched_below_sma20"],
+                    f"{abs(dist20):.1f} ATR below 20-day average"))
+    if rsi14 is not None and rsi14 < 35 and vrel is not None and vrel > 2:
+        dip.append(("capitulation_volume", DIP_WEIGHTS["capitulation_volume"],
+                    f"capitulation volume {ind['vol_ratio']:.1f}x median"))
+
+    # --- BUY playbook 2: MOMENTUM (buy strength) ----------------------------
+    mom: list[tuple[str, int, str]] = []
+    if rs is not None and rs > 0.20:
+        mom.append(("leader_rs20", MOMENTUM_WEIGHTS["leader_rs20"],
+                    f"leader: beat SPY by {rs * 100:.0f} pts in 3 months"))
+    elif rs is not None and rs > 0.10:
+        mom.append(("leader_rs10", MOMENTUM_WEIGHTS["leader_rs10"],
+                    f"outperforming SPY by {rs * 100:.0f} pts in 3 months"))
+    if sma50 and price > sma50 * 1.15:
+        mom.append(("extended15", MOMENTUM_WEIGHTS["extended15"],
+                    f"{(price / sma50 - 1) * 100:.0f}% above 50-day — strong trend"))
+    elif sma50 and price > sma50 * 1.10:
+        mom.append(("extended10", MOMENTUM_WEIGHTS["extended10"],
+                    f"{(price / sma50 - 1) * 100:.0f}% above 50-day"))
+    if vrel is not None and vrel > 2 and price >= open_:
+        mom.append(("volume_up_day", MOMENTUM_WEIGHTS["volume_up_day"],
+                    f"volume {ind['vol_ratio']:.1f}x median on an up day"))
+    if hi20 is not None and price > hi20 and cpos >= 0.7 and \
+            vrel is not None and vrel >= 1.5:
+        mom.append(("breakout20_volume", MOMENTUM_WEIGHTS["breakout20_volume"],
+                    f"broke 20-day high ({_fmt_price(hi20)}) on volume"))
+    if trend == "up":
+        mom.append(("uptrend", MOMENTUM_WEIGHTS["uptrend"],
+                    "uptrend (above rising 200-day, 50 > 200)"))
+
+    dip_score = min(TECH_CAP, sum(p for _, p, _ in dip))
+    mom_score = min(TECH_CAP, sum(p for _, p, _ in mom))
+    ind["dip_score"], ind["momentum_score"] = dip_score, mom_score
+    if dip_score == 0 and mom_score == 0:
+        playbook, setups, tech_score = None, [], 0
+    elif dip_score >= mom_score:
+        playbook, setups, tech_score = "dip", dip, dip_score
+    else:
+        playbook, setups, tech_score = "momentum", mom, mom_score
+
+    # --- SELL: strength inside the stock's own downtrend --------------------
+    bear: list[tuple[str, int, str]] = []
+    if trend == "down" and dist20 is not None and dist20 > 2:
+        bear.append(("rally_in_downtrend", BEAR_WEIGHTS["rally_in_downtrend"],
+                     f"downtrend rally {dist20:.1f} ATR above 20-day — "
+                     f"into resistance"))
+    if sma200 and price < sma200 and rsi14 is not None and rsi14 > 70:
+        bear.append(("overbought_below_200",
+                     BEAR_WEIGHTS["overbought_below_200"],
+                     f"RSI {rsi14:.0f} overbought while below the 200-day"))
+    if trend == "down" and rsi2 is not None and rsi2 > 90:
+        bear.append(("short_term_overbought_dn",
+                     BEAR_WEIGHTS["short_term_overbought_dn"],
+                     f"RSI(2) {rsi2:.0f} — short-term overbought in a downtrend"))
+    if bear and trend == "down":
+        bear.append(("downtrend", BEAR_WEIGHTS["downtrend"],
+                     "downtrend (below falling 200-day, 50 < 200)"))
+    bear_score = min(BEAR_CAP, sum(p for _, p, _ in bear))
+
+    return {"price": price, "tech_score": tech_score, "setups": setups,
+            "playbook": playbook, "bear_score": bear_score,
+            "bear_setups": bear, "trend": trend,
+            "levels": {"BUY": risk_levels(price, atr14, "BUY"),
+                       "SELL": risk_levels(price, atr14, "SELL")},
+            "indicators": ind}
 
 
 def classify_side(res: dict) -> str:
-    """'BUY' when the bull score's fraction of its scale >= the bear's.
+    """'BUY' when the BUY score >= the SELL score (one 0-100 scale for both
+    sides); ties go bullish."""
+    return "BUY" if res["tech_score"] >= res["bear_score"] else "SELL"
 
-    The sides live on different scales (bull max 28, bear max 100), so raw
-    sums are not comparable: a 25-point bear score is a quarter of its
-    scale, while a 25-point bull score is over half of its. Comparing
-    fractions fixes the old tilt toward SELL on borderline names. Ties
-    still go bullish.
-    """
-    bull = res["tech_score"] / BULL_TECH_MAX if BULL_TECH_MAX else 0.0
-    bear = res["bear_score"] / BEAR_TECH_MAX if BEAR_TECH_MAX else 0.0
-    return "BUY" if bull >= bear else "SELL"
+
+def risk_note(row: dict, side: str) -> str | None:
+    """'stop $X · target $Y (ATR)' for an alert line, or None."""
+    lv = (row.get("levels") or {}).get(side)
+    if not lv:
+        return None
+    stop, tgt = lv
+    return f"stop {_fmt_price(stop)} · target {_fmt_price(tgt)}"
 
 
 # ---------------------------------------------------------------------------
 # Fundamental overlay (top technical scorers only)
 # ---------------------------------------------------------------------------
+PIOTROSKI_MIN_TESTS = 7  # tests that must be evaluable before it scores
+
+
+def _piotroski_usable(pio: dict) -> int | None:
+    """Piotroski score, or None when too few of the 9 tests could run.
+
+    Untestable items count as failures in the raw score, so a company
+    with no prior-year filing maxes out at 3/9 and read as "weak" — a
+    data gap scored as bad fundamentals. Missing data now scores 0.
+    """
+    evaluated = pio.get("evaluated")
+    if evaluated is not None and evaluated < PIOTROSKI_MIN_TESTS:
+        return None
+    return pio.get("score")
+
+
 def _dcf_usable(dcf: dict) -> bool:
     """True only when the DCF leg may score: the model ran on a positive
     base FCF. A fair value derived from zero/negative free cash flow (or
@@ -728,7 +827,7 @@ def fundamental_bonus(store: Store, symbol: str,
         return 0, []
 
     pio = data.get("piotroski") or {}
-    pscore = pio.get("score")
+    pscore = _piotroski_usable(pio)
     if pscore is not None:
         if pscore >= 8:
             bonus += 10
@@ -778,7 +877,7 @@ def short_bonus(store: Store, symbol: str,
         return 0, []
 
     pio = data.get("piotroski") or {}
-    pscore = pio.get("score")
+    pscore = _piotroski_usable(pio)
     if pscore is not None:
         if pscore <= 2:
             bonus += 10
@@ -979,39 +1078,47 @@ def _current_regime(store: Store, rest: AlpacaREST) -> str | None:
         return None
 
 
-def _regime_fights(side: str, regime: str | None) -> bool:
-    """True when the regime works against the side: bear vs buys, bull vs
-    sells, sideways vs BOTH (no trend to lean on in either direction).
-    Unknown regime fights nothing (fail open)."""
-    if regime == "bear":
-        return side == "BUY"
-    if regime == "bull":
-        return side == "SELL"
-    if regime == "sideways":
-        return True
-    return False
+def _spy_closes(rest: AlpacaREST) -> list[float] | None:
+    """SPY daily closes for relative strength (one REST call per pass).
+    Fetched alongside the universe so both series end on the same day.
+    None on failure — the leader setups then just don't fire."""
+    try:
+        bars = rest.daily_bars_multi(["SPY"], days=300).get("SPY") or []
+        return [b["c"] for b in bars] or None
+    except Exception as e:  # noqa: BLE001 - advisory, fail open
+        log.warning("SPY bars unavailable (%s) — no relative strength", e)
+        return None
 
 
-def _morning_bar(side: str, regime: str | None) -> int:
-    """Effective raw morning-push bar for a side (on the composite):
-    MORNING_BUY_BAR / MORNING_SELL_BAR, plus the raw regime-gate bonus
-    when the regime fights the side. Effective today: buy 20 (gated 25),
-    sell 50 (gated 65)."""
-    bar = MORNING_BUY_BAR if side == "BUY" else MORNING_SELL_BAR
-    if _regime_fights(side, regime):
-        bar += GATE_BUY_BONUS if side == "BUY" else GATE_SELL_BONUS
+def push_bar(side: str, regime: str | None,
+             playbook: str | None = None) -> int:
+    """Technical-score bar a setup must clear to reach the phone.
+
+    SELL: SELL_BAR (+ REGIME_SELL_PENALTY_BEAR in a bear regime). BUY:
+    the playbook's bar, plus
+    REGIME_BUY_PENALTY for the playbook the regime disfavours — dips in
+    a bull regime, momentum in a sideways/bear regime. Unknown regime or
+    playbook -> base bar (fail open)."""
+    if side == "SELL":
+        return SELL_BAR + (REGIME_SELL_PENALTY_BEAR if regime == "bear" else 0)
+    pb = playbook if playbook in BUY_BARS else "dip"
+    bar = BUY_BARS[pb]
+    if (pb == "dip" and regime == "bull") or \
+            (pb == "momentum" and regime in ("bear", "sideways")):
+        bar += REGIME_BUY_PENALTY
     return bar
 
 
-def _watch_bar(side: str, regime: str | None) -> int:
-    """Effective raw watch-push bar for a side (tech score only — watch
-    runs no fundamental overlay), gated like the morning bar with the
-    same raw bonuses. Effective today: buy 20 (gated 25), sell 30
-    (gated 45)."""
-    bar = WATCH_BUY_BAR if side == "BUY" else WATCH_SELL_BAR
-    if _regime_fights(side, regime):
-        bar += GATE_BUY_BONUS if side == "BUY" else GATE_SELL_BONUS
-    return bar
+def _morning_bar(side: str, regime: str | None,
+                 playbook: str | None = None) -> int:
+    """Morning push bar (technical score) — same bars as watch mode."""
+    return push_bar(side, regime, playbook)
+
+
+def _watch_bar(side: str, regime: str | None,
+               playbook: str | None = None) -> int:
+    """Watch push bar (technical score) — same bars as the morning scan."""
+    return push_bar(side, regime, playbook)
 
 
 # ---------------------------------------------------------------------------
@@ -1111,23 +1218,49 @@ def _reset_seen(store: Store) -> None:
     _save_seen(store, {"date": _et_today_str(), "symbols": []})
 
 
+def _playbook_tag(row: dict, side: str) -> str | None:
+    if side == "BUY" and row.get("playbook"):
+        return "dip buy" if row["playbook"] == "dip" else "momentum"
+    return None
+
+
+def _watch_reasons(r: dict) -> list[str]:
+    """Reason strings for a watch match: setups, sentiment, risk, earnings."""
+    side = r["side"]
+    setups = r["setups"] if side == "BUY" else r["bear_setups"]
+    reasons = [reason for _, _, reason in setups]
+    tag = _playbook_tag(r, side)
+    if tag:
+        reasons.insert(0, tag)
+    if sentiment.has_signal(r.get("sentiment_payload")):
+        reasons.append(sentiment.format_combined(r["sentiment_payload"]))
+    note = risk_note(r, side)
+    if note:
+        reasons.append(note)
+    return _with_note(reasons, r)
+
+
+def _log_bars(mode: str, regime: str | None) -> None:
+    if regime in ("bull", "bear", "sideways"):
+        log.info("%s: %s regime — buy bars dip %d / momentum %d, sell %d",
+                 mode, regime, push_bar("BUY", regime, "dip"),
+                 push_bar("BUY", regime, "momentum"),
+                 push_bar("SELL", regime))
+
+
 def _watch_entry(r: dict) -> dict:
     """Dashboard-ready entry for one NEW watch match — mirrors the push line.
 
     Carries everything the alert shows: symbol, side, price, the 0–100
     score, the X.X/10 display rating, and the human-readable breakdown.
     """
-    setups = r["setups"] if r["side"] == "BUY" else r["bear_setups"]
-    reasons = [reason for _, _, reason in setups]
-    if sentiment.has_signal(r.get("sentiment_payload")):
-        reasons.append(sentiment.format_combined(r["sentiment_payload"]))
-    reasons = _with_note(reasons, r)
+    reasons = _watch_reasons(r)
     return {"symbol": r["symbol"],
             "side": r["side"],
             "price": r["price"],
             "score": r["score"],
-            "rating": sentiment.adjusted_rating_str(
-                r["score"], r.get("sentiment", 0.0)),
+            "rating": side_rating(r["score"], r["side"],
+                                  r.get("sentiment", 0.0)),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "time": _et_now().isoformat()}
@@ -1182,19 +1315,10 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     seen = _load_seen(store)
     seen_set = set(seen["symbols"])
 
-    # Regime gate (push only): in a bear regime a new BUY match must clear
-    # a higher bar, and vice versa in a bull regime; sideways raises both.
-    # Fail open on unknown. Bars are explicit raw values (see the
-    # calibration note at the bar constants).
+    # Regime picks the favoured BUY playbook (see push_bar). Fail open.
     regime = _current_regime(store, rest)
-    buy_bar = _watch_bar("BUY", regime)
-    sell_bar = _watch_bar("SELL", regime)
-    if buy_bar != _watch_bar("BUY", None):
-        log.info("watch: %s regime — buy push bar raised to %d",
-                 regime, buy_bar)
-    if sell_bar != _watch_bar("SELL", None):
-        log.info("watch: %s regime — sell push bar raised to %d",
-                 regime, sell_bar)
+    _log_bars("watch", regime)
+    spy = _spy_closes(rest)
 
     # Today's bar is still forming: scale the volume-spike threshold by
     # the elapsed fraction of the session (see technical_screen).
@@ -1210,20 +1334,18 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
-            res = technical_screen(bars, volume_scale=volume_scale)
+            res = technical_screen(bars, volume_scale=volume_scale,
+                                   spy_closes=spy)
             if res is None or not passes_liquidity(bars):
                 continue
-            # The labeled side (higher score fraction) must clear ITS bar.
-            # With equal bars this is exactly the old either-side test;
-            # under the regime gate it stops a gated-side label sneaking
-            # in on the strength of the other side's lower bar.
+            # The labeled side must clear ITS bar (BUY: its playbook's).
             side = classify_side(res)
             if _seen_covers(seen_set, sym, side):
                 continue  # this side already alerted today; a later
                 # flip to the other side can still alert
             score = (res["tech_score"] if side == "BUY"
                      else res["bear_score"])
-            if score < (buy_bar if side == "BUY" else sell_bar):
+            if score < push_bar(side, regime, res.get("playbook")):
                 continue
             fresh.append({"symbol": sym, "side": side,
                           "score": score,
@@ -1251,21 +1373,13 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         _attach_earnings_note(store, r, settings.finnhub_key)
 
     if fresh:
-        seen["symbols"].extend(_seen_key(r["symbol"], r["side"])
-                               for r in fresh)
-        _save_seen(store, seen)
         buys = [r for r in fresh if r["side"] == "BUY"]
         sells = [r for r in fresh if r["side"] == "SELL"]
 
         def _line(r: dict) -> str:
-            setups = r["setups"] if r["side"] == "BUY" else r["bear_setups"]
-            reasons = [reason for _, _, reason in setups]
-            if sentiment.has_signal(r.get("sentiment_payload")):
-                reasons.append(sentiment.format_combined(
-                    r["sentiment_payload"]))
-            reasons = _with_note(reasons, r)
+            reasons = _watch_reasons(r)
             return (f"{r['side']}: {r['symbol']} @ {_fmt_price(r['price'])} — "
-                    f"{sentiment.adjusted_rating_str(r['score'], r.get('sentiment', 0.0))} — "
+                    f"{side_rating(r['score'], r['side'], r.get('sentiment', 0.0))} — "
                     f"{'; '.join(reasons)}")
 
         shown = fresh[:WATCH_PUSH_MAX]
@@ -1279,30 +1393,39 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                          if len(buys) != 1
                          else f"BUY SETUP: {buys[0]['symbol']} @ "
                               f"{_fmt_price(buys[0]['price'])} — "
-                              f"{sentiment.adjusted_rating_str(buys[0]['score'], buys[0].get('sentiment', 0.0))}")
+                              f"{side_rating(buys[0]['score'], 'BUY', buys[0].get('sentiment', 0.0))}")
         if sells:
             parts.append(f"SELL SETUP: {len(sells)} new"
                          if len(sells) != 1
                          else f"SELL SETUP: {sells[0]['symbol']} @ "
                               f"{_fmt_price(sells[0]['price'])} — "
-                              f"{sentiment.adjusted_rating_str(sells[0]['score'], sells[0].get('sentiment', 0.0))}")
+                              f"{side_rating(sells[0]['score'], 'SELL', sells[0].get('sentiment', 0.0))}")
         title = " · ".join(parts)
         body = "\n".join(lines)
         if dry_run:
+            # dry run: print only — never touch the seen-list, or the
+            # real 15-minute watch would stay silent on these symbols
             print(title)
             print(body)
-        elif push_fn is None:
-            ok = send_ntfy(settings.ntfy_server, settings.ntfy_topic,
-                            title, body, priority=4,
-                            tags=["rotating_light", "chart_with_upwards_trend"],
-                            timeout=30)
+        else:
+            if push_fn is None:
+                ok = send_ntfy(settings.ntfy_server, settings.ntfy_topic,
+                               title, body, priority=4,
+                               tags=["rotating_light",
+                                     "chart_with_upwards_trend"],
+                               timeout=30)
+            else:
+                ok = push_fn(title, body)
             log.info("watch: ntfy push %s (%d new: %d buy, %d sell)",
                      "sent" if ok else "FAILED",
                      len(fresh), len(buys), len(sells))
-        else:
-            push_fn(title, body)
-        if not dry_run:
-            _persist_watch(store, fresh)
+            if ok:
+                # mark seen only once the alert actually reached the
+                # phone; a failed push is retried on the next pass
+                seen["symbols"].extend(_seen_key(r["symbol"], r["side"])
+                                       for r in fresh)
+                _save_seen(store, seen)
+                _persist_watch(store, fresh)
     else:
         log.info("watch: no new setups")
         if dry_run:
@@ -1318,9 +1441,25 @@ def _candidate_reasons(c: dict, side: str) -> list[str]:
     setups = c["setups"] if side == "BUY" else c["bear_setups"]
     extra = c.get("fund_reasons") if side == "BUY" else c.get("short_reasons")
     reasons = [r for _, _, r in setups] + list(extra or [])
+    tag = _playbook_tag(c, side)
+    if tag:
+        reasons.insert(0, tag)
     if sentiment.has_signal(c.get("sentiment_payload")):
         reasons.append(sentiment.format_combined(c["sentiment_payload"]))
+    note = risk_note(c, side)
+    if note:
+        reasons.append(note)
     return _with_note(reasons, c)
+
+
+def _morning_rating(c: dict, side: str) -> str:
+    """Morning-list rating: technical score + fundamental bonus, each on
+    its own scale (see side_rating)."""
+    if side == "BUY":
+        return side_rating(c["tech_score"], "BUY", c.get("sentiment", 0.0),
+                           c.get("fund_bonus", 0))
+    return side_rating(c["bear_score"], "SELL", c.get("sentiment", 0.0),
+                       c.get("short_bonus", 0))
 
 
 def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
@@ -1332,8 +1471,7 @@ def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
     return {"symbol": c["symbol"],
             "price": c["price"],
             "score": score,
-            "rating": sentiment.adjusted_rating_str(
-                score, c.get("sentiment", 0.0)),
+            "rating": _morning_rating(c, side),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "sentiment": c.get("sentiment", 0.0),
@@ -1378,7 +1516,7 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     rest = rest or AlpacaREST(settings.alpaca_key, settings.alpaca_secret)
 
     # --- trading-day guard --------------------------------------------------
-    today = dt.date.today().isoformat()
+    today = _et_today_str()
     is_open = sessions_mod.is_trading_day(store, today)
     if is_open is None:
         sessions_mod.refresh_cache(store)
@@ -1388,7 +1526,9 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         return {"buys": [], "sells": []}
 
     # fresh day, fresh watch: the morning scan resets the watch seen-list
-    _reset_seen(store)
+    # (not on a dry run — that would re-fire every alert already sent today)
+    if not dry_run:
+        _reset_seen(store)
 
     # --- universe -----------------------------------------------------------
     universe = get_universe(store, rest)
@@ -1401,13 +1541,14 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     bull_rows: list[dict] = []
     bear_rows: list[dict] = []
     evaluated = 0
+    spy = _spy_closes(rest)
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
         for sym in universe[ci:ci + 100]:
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
-            res = technical_screen(bars)
+            res = technical_screen(bars, spy_closes=spy)
             if res is None or not passes_liquidity(bars):
                 continue
             evaluated += 1
@@ -1448,24 +1589,17 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     bull_rows.sort(key=lambda r: r["composite"], reverse=True)
     bear_rows.sort(key=lambda r: r["short_composite"], reverse=True)
 
-    # Regime gate (push only): a side fighting the regime must clear a
-    # higher bar to reach the phone. bull_rows/bear_rows themselves (and
-    # therefore the persisted dashboard lists) are NOT gated — they keep
-    # every setup at its true score. Fail open when the regime is unknown.
-    # Bars are explicit raw values (see the calibration note at the bar
-    # constants).
+    # Push decision on the TECHNICAL score against the playbook's bar
+    # (regime shifts the BUY playbook bars — see push_bar). Fundamentals
+    # and sentiment only rank and rate. The persisted dashboard lists are
+    # never gated: every setup keeps its true score. One side per symbol.
     regime = _current_regime(store, rest)
-    buy_bar = _morning_bar("BUY", regime)
-    sell_bar = _morning_bar("SELL", regime)
-    if buy_bar != _morning_bar("BUY", None):
-        log.info("scan: %s regime — buy push bar raised to %d",
-                 regime, buy_bar)
-    if sell_bar != _morning_bar("SELL", None):
-        log.info("scan: %s regime — sell push bar raised to %d",
-                 regime, sell_bar)
-    buy_cands = [r for r in bull_rows if r["composite"] >= buy_bar]
-    sell_cands = [r for r in bear_rows
-                  if r["short_composite"] >= sell_bar]
+    _log_bars("scan", regime)
+    buy_cands = [r for r in bull_rows if classify_side(r) == "BUY"
+                 and r["tech_score"] >= push_bar("BUY", regime,
+                                                 r.get("playbook"))]
+    sell_cands = [r for r in bear_rows if classify_side(r) == "SELL"
+                  and r["bear_score"] >= push_bar("SELL", regime)]
     # Push-only price floor: penny names are the noisiest (and most
     # manipulable) spike/breakout sources — they stay on the dashboard
     # lists but never reach the phone below PUSH_MIN_PRICE.
@@ -1498,12 +1632,12 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     # --- output ---------------------------------------------------------------
     def _buy_line(i: int, c: dict) -> str:
         return (f"{i}. BUY: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{sentiment.adjusted_rating_str(c['composite'], c.get('sentiment', 0.0))} — "
+                f"{_morning_rating(c, 'BUY')} — "
                 f"{'; '.join(_candidate_reasons(c, 'BUY'))}")
 
     def _sell_line(i: int, c: dict) -> str:
         return (f"{i}. SELL: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{sentiment.adjusted_rating_str(c['short_composite'], c.get('sentiment', 0.0))} — "
+                f"{_morning_rating(c, 'SELL')} — "
                 f"{'; '.join(_candidate_reasons(c, 'SELL'))}")
 
     sections: list[str] = []

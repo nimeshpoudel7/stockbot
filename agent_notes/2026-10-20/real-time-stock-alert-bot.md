@@ -3,16 +3,16 @@
 
 ## Current state (as of Tue 2026-10-20 7:08 AM EDT)
 
-Nimesh's stock alert bot went from a VM prototype to a fully self-running product on his own Oracle Cloud free-tier server (Ubuntu, VM.Standard.E2.1.Micro — Ampere AD-1 was out of capacity; public IP 140.238.148.186) between ~2:22 AM and ~3:08 AM EDT. The old VM bot, rotating tunnel links, and all four old schedules were shut down ~4:13 AM EDT at his order ("stop creating"). Oracle is now the only bot.
+Nimesh's stock alert bot went from a VM prototype to a fully self-running product on his own Oracle Cloud free-tier server (Ubuntu, VM.Standard.E2.1.Micro — Ampere AD-1 was out of capacity; public IP <server-ip>) between ~2:22 AM and ~3:08 AM EDT. The old VM bot, rotating tunnel links, and all four old schedules were shut down ~4:13 AM EDT at his order ("stop creating"). Oracle is now the only bot.
 
 Feature set, all live on the server:
 - **Scanner hunts ~13,520 tradeable US stocks** (penny/small/mid included; no price floor; dead tickers filtered by dollar-volume liquidity), BUY and SELL setups both, using the same indicator logic as the original 39-symbol engine (RSI, Bollinger, volume, SMA crosses, 52-week levels).
 - **Two cadences:** weekday 8:00 AM ET deep scan with ranked buy+sell lists, and 15-min intraday watch during market hours pushing instantly on new matches (one alert per stock per day).
 - **Every alert and morning-list line carries a /10 rating** in the title (display-only, thresholds unchanged).
 - **Sentiment overlay (trusted sources only):** 7-day financial-press news tone (Finnhub headlines, finance lexicon with negation handling) 50/50 blended with analyst buy/hold/sell counts; swings each rating ±1.5 with the breakdown shown in alerts. He explicitly REJECTED Stocktwits/social sentiment as untrustworthy (~00:31–00:32 UTC); X sentiment was also declined ($100/mo).
-- **Dashboard** at a permanent link (http://140.238.148.186:8000, token-gated), with a **Scanner Picks** section showing all setups with ratings, **chart range buttons (1D/1M/6M/1Y)**, watchlist showing last close when market is closed, professional layout. **Stock detail page** live (~5:19 AM UTC): tap any symbol → price/day %, sector, market cap, chart, levels table (support, resistance, breakout/breakdown points, buy zone, SMA50/200, RSI, volume), scanner verdict with which setups fired, financial condition (Piotroski, Altman Z, DCF fair value; pre-revenue names show n/a honestly), sentiment section.
+- **Dashboard** at a permanent link (http://<server-ip>:8000, token-gated), with a **Scanner Picks** section showing all setups with ratings, **chart range buttons (1D/1M/6M/1Y)**, watchlist showing last close when market is closed, professional layout. **Stock detail page** live (~5:19 AM UTC): tap any symbol → price/day %, sector, market cap, chart, levels table (support, resistance, breakout/breakdown points, buy zone, SMA50/200, RSI, volume), scanner verdict with which setups fired, financial condition (Piotroski, Altman Z, DCF fair value; pre-revenue names show n/a honestly), sentiment section.
 - **9:30 AM ET market-open bell** push each trading day with regime + scanner status; weekends/holidays quiet automatically.
-- Phone pushes via ntfy (default ntfy.sh server), topic `stockbot-q7x2m9-alerts`.
+- Phone pushes via ntfy (default ntfy.sh server), topic `stockbot-<random>-alerts`.
 - He has SSH access from his PC and knows the three manual commands (full scan, `--watch` rescan, `--dry-run` rehearsal) — he explicitly wanted to run scans himself; assistant ran a demo then cleared the field.
 
 ### Critical quality failure found and fixed overnight

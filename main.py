@@ -7,6 +7,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import uvicorn
 
@@ -31,6 +34,32 @@ logging.basicConfig(
 log = logging.getLogger("stockbot")
 
 
+def _et_day() -> str:
+    """Session date in New York. The daily rollover fires at 00:00 ET."""
+    return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+def _apply_daily(st: MarketState, stats: dict) -> None:
+    st.prev_close = stats["prev_close"]
+    st.high_52w = stats["high_52w"]
+    st.low_52w = stats["low_52w"]
+    st.daily_closes = stats.get("daily_closes", [])
+
+
+async def refresh_daily_stats(manager: FeedManager,
+                              market: dict[str, MarketState]) -> None:
+    """Re-pull prev_close / 52-week range / daily closes for every symbol.
+
+    Warm-up values used to be set once at boot, so a bot that ran past
+    midnight kept measuring day-% moves against an old close."""
+    for symbol, st in list(market.items()):
+        try:
+            _apply_daily(st, await manager.daily_refresh(symbol))
+        except Exception:  # noqa: BLE001 - keep yesterday's values
+            log.exception("daily refresh failed for %s", symbol)
+    log.info("daily stats refreshed for %d symbols", len(market))
+
+
 async def _warm_one(manager: FeedManager, store: Store,
                     market: dict[str, MarketState], symbol: str) -> None:
     """Fetch history, seed market state + candle cache."""
@@ -40,10 +69,7 @@ async def _warm_one(manager: FeedManager, store: Store,
         log.exception("warm-up failed for %s", symbol)
         return
     st = market[symbol]
-    st.prev_close = w["prev_close"]
-    st.high_52w = w["high_52w"]
-    st.low_52w = w["low_52w"]
-    st.daily_closes = w.get("daily_closes", [])
+    _apply_daily(st, w)
     for b in w["bars_1m"]:
         st.bars.append(b)
     store.candles_save(symbol, "1m", w["bars_1m"])
@@ -62,10 +88,28 @@ async def amain() -> None:
     store = Store(settings.db_path)
     market: dict[str, MarketState] = {}
 
+    push_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ntfy")
+
+    def _push_done(fut) -> None:
+        try:
+            ok = fut.result()
+        except Exception:  # noqa: BLE001
+            ok = False
+        if not ok:
+            log.warning("ntfy push failed (alert state already recorded)")
+
     def notify(title: str, message: str, priority: int, tags: list) -> bool:
-        # generous timeout: some public ntfy servers answer slowly
-        return send_ntfy(settings.ntfy_server, settings.ntfy_topic,
-                         title, message, priority, tags, timeout=30)
+        """Queue the push on a worker thread and return at once.
+
+        send_ntfy can block for ~90s (30s timeout x 3 attempts); called
+        inline it froze the event loop — the websocket feeds, the tick pump
+        and the dashboard all share it. Failures are logged by _push_done.
+        """
+        fut = push_pool.submit(send_ntfy, settings.ntfy_server,
+                               settings.ntfy_topic, title, message,
+                               priority, tags, timeout=30)
+        fut.add_done_callback(_push_done)
+        return True
 
     # ---- feeds ---------------------------------------------------------
     feeds = [AlpacaFeed(settings.alpaca_key, settings.alpaca_secret)]
@@ -95,9 +139,11 @@ async def amain() -> None:
         return feed.get_daily_bars(symbol, days)
 
     regime_cache = regime_mod.RegimeCache(store, _daily_bars)
-    engine.regime_fn = regime_cache.current
+    # tick path reads the in-memory regime only; the network refresh runs
+    # in a worker thread from the daily maintenance task below
+    engine.regime_fn = regime_cache.cached
     try:
-        regime_cache.refresh()
+        await asyncio.to_thread(regime_cache.refresh)
     except Exception:  # noqa: BLE001 - regime is advisory only
         log.exception("regime refresh failed")
 
@@ -221,9 +267,27 @@ async def amain() -> None:
             except Exception:  # noqa: BLE001 - one bad tick never kills the loop
                 log.exception("tick handling failed for %s", tick.symbol)
 
+    async def daily_maintenance():
+        """Once per ET day: fresh prev_close/52w stats, regime, calendar."""
+        last_day = _et_day()
+        while True:
+            await asyncio.sleep(300)
+            today = _et_day()
+            if today == last_day:
+                continue
+            last_day = today
+            await refresh_daily_stats(manager, market)
+            for fn in (regime_cache.refresh,
+                       lambda: sessions_mod.refresh_cache(store)):
+                try:
+                    await asyncio.to_thread(fn)
+                except Exception:  # noqa: BLE001
+                    log.exception("daily maintenance step failed")
+
     tasks = [
         asyncio.create_task(pump_ticks(), name="ticks"),
         asyncio.create_task(server.serve(), name="dashboard"),
+        asyncio.create_task(daily_maintenance(), name="daily"),
     ]
     if poller is not None:
         tasks.append(asyncio.create_task(poller.run_forever(), name="events"))
@@ -251,6 +315,7 @@ async def amain() -> None:
         feed_task.cancel()
         tasks.append(feed_task)
     await asyncio.gather(*tasks, return_exceptions=True)
+    push_pool.shutdown(wait=True)
     store.close()
     log.info("bye")
 
