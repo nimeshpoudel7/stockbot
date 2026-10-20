@@ -1218,6 +1218,19 @@ def _reset_seen(store: Store) -> None:
     _save_seen(store, {"date": _et_today_str(), "symbols": []})
 
 
+def _structured(row: dict, side: str) -> dict:
+    """Machine-readable fields for the dashboard (no text parsing needed)."""
+    lv = (row.get("levels") or {}).get(side) or (None, None)
+    setups = row.get("setups" if side == "BUY" else "bear_setups") or []
+    return {"side": side,
+            "playbook": row.get("playbook") if side == "BUY" else None,
+            "stop": lv[0], "target": lv[1],
+            "tech_score": row.get("tech_score" if side == "BUY"
+                                  else "bear_score"),
+            "setups": [{"name": n, "points": p, "reason": r}
+                       for n, p, r in setups]}
+
+
 def _playbook_tag(row: dict, side: str) -> str | None:
     if side == "BUY" and row.get("playbook"):
         return "dip buy" if row["playbook"] == "dip" else "momentum"
@@ -1263,7 +1276,8 @@ def _watch_entry(r: dict) -> dict:
                                   r.get("sentiment", 0.0)),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
-            "time": _et_now().isoformat()}
+            "time": _et_now().isoformat(),
+            **_structured(r, r["side"])}
 
 
 def _persist_watch(store: Store, fresh: list[dict]) -> None:
@@ -1475,7 +1489,8 @@ def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "sentiment": c.get("sentiment", 0.0),
-            "top_pick": top_pick}
+            "top_pick": top_pick,
+            **_structured(c, side)}
 
 
 def _persist_morning(store: Store, buys: list[dict],

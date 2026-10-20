@@ -479,7 +479,7 @@ class TestApiStock(unittest.TestCase):
         store = Store(":memory:")
         ep = _endpoint(self._app(store), "/stock")
         html = ep()
-        for marker in ("Scanner Verdict", "levelsTable", "fundTable",
+        for marker in ("Scanner verdict", "levelsTable", "fundTable",
                        "sentCard", "/api/stock/", "Levels"):
             self.assertIn(marker, html)
 
