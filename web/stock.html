@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1621">
+<title id="pgTitle">Stock — Stockbot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+{{BASE_CSS}}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);text-decoration:none;font-weight:500;font-size:.92rem}
+.back:hover{color:var(--ink)}
+.back svg{width:16px;height:16px}
+
+/* hero: the ticker IS the headline */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 24px;align-items:end;margin-top:24px}
+.hero .tick{font-size:clamp(2.6rem,7vw,4.2rem);line-height:.95;letter-spacing:-.01em}
+.hero .name{font-size:1.02rem;color:var(--ink-2);margin-top:8px}
+.hero .ctx{font-size:.86rem;color:var(--mute);margin-top:2px}
+.hero .px{text-align:right}
+.hero .px .last{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;font-weight:600;font-size:clamp(1.9rem,5vw,2.7rem);line-height:1}
+.hero .px .day{font-weight:500;margin-top:6px}
+@media (max-width:620px){.hero{grid-template-columns:1fr}.hero .px{text-align:left}}
+
+.stats{display:grid;grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr));gap:12px;margin-top:20px}
+.stat{background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:12px 14px}
+.stat .k{font-size:.8rem;color:var(--mute)}
+.stat .v{font-weight:600;margin-top:3px}
+.range{position:relative;height:6px;border-radius:3px;background:var(--line);margin:10px 0 6px}
+.range i{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--amber);border:2px solid var(--panel)}
+.range-l{display:flex;justify-content:space-between;font-size:.8rem;color:var(--ink-2)}
+@media (max-width:760px){.stats{grid-template-columns:1fr 1fr}.stats .stat:first-child{grid-column:1 / -1}}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;margin-top:20px;align-items:start}
+.layout > .col{display:flex;flex-direction:column;gap:20px;min-width:0}
+@media (max-width:1020px){.layout{grid-template-columns:minmax(0,1fr)}}
+
+/* verdict */
+.verdict-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.verdict-top .side{font-size:.95rem;padding:4px 10px}
+.verdict-top .spacer{flex:1}
+.verdict-sum{margin:12px 0 4px;color:var(--ink-2);max-width:62ch}
+.setups{list-style:none;margin:14px 0 0;padding:0}
+.setups li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:.92rem}
+.setups li .pts{color:var(--mute);font-size:.84rem}
+.notes{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:.88rem;color:var(--ink-2)}
+.notes li::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--mute);margin:0 9px 2px 2px}
+.counter{font-size:.84rem;color:var(--mute);margin-top:12px}
+.verdict-risk{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+
+/* key levels: a vertical price ladder, highest first */
+.levels{list-style:none;margin:0;padding:0}
+.levels li{display:grid;grid-template-columns:minmax(0,1fr) auto 104px;gap:12px;align-items:center;padding:9px 18px;border-top:1px solid var(--line-soft)}
+.levels li .nm{font-size:.92rem}
+.levels li .nm small{display:block;color:var(--mute);font-size:.78rem}
+.levels li .val{font-weight:500;text-align:right}
+.levels li .dist{font-size:.82rem;text-align:right;color:var(--mute);white-space:nowrap}
+.levels li.here{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--amber)}
+.levels li.here .nm{font-weight:600}
+.levels li.here .val{font-weight:600}
+
+/* indicator tiles */
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:0 18px 18px}
+.tile{border:1px solid var(--line-soft);background:var(--panel-2);border-radius:var(--radius);padding:12px}
+.tile .k{font-size:.8rem;color:var(--mute)}
+.tile .v{font-size:1.25rem;font-weight:600;margin-top:2px}
+.tile .t{font-size:.82rem;color:var(--ink-2);margin-top:4px}
+.gauge{position:relative;height:6px;border-radius:3px;margin-top:10px;background:linear-gradient(90deg,var(--buy) 0 30%,var(--line) 30% 70%,var(--sell) 70% 100%);opacity:.9}
+.gauge i{position:absolute;top:50%;width:4px;height:14px;margin:-7px 0 0 -2px;border-radius:2px;background:var(--ink)}
+@media (max-width:420px){.tiles{grid-template-columns:1fr}}
+
+.kv{list-style:none;margin:0;padding:0 18px 16px}
+.kv li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.92rem}
+.kv li span:first-child{color:var(--ink-2)}
+.analysts{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:8px;background:var(--line)}
+.analysts i{display:block;height:100%}
+.legend{display:flex;gap:14px;font-size:.8rem;color:var(--ink-2);margin-top:6px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:var(--c)}
+.chart-tools{display:flex;gap:6px;flex-wrap:wrap;padding:4px 18px 8px}
+.chip-t{appearance:none;border:1px solid var(--line-soft);background:var(--panel-2);color:var(--ink-2);font:inherit;font-size:.8rem;font-weight:500;
+  border-radius:999px;padding:4px 10px 4px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip-t i{width:8px;height:8px;border-radius:50%;opacity:.35}
+.chip-t[aria-pressed="true"]{color:var(--ink);border-color:var(--line)}
+.chip-t[aria-pressed="true"] i{opacity:1}
+.chip-t[disabled]{opacity:.45;cursor:default}
+.sub{position:relative;border-top:1px solid var(--line-soft);margin-top:4px}
+.sub-l{position:absolute;left:8px;top:4px;z-index:2;font-size:.74rem;color:var(--mute)}
+.sub-l b{color:var(--ink);font-weight:600}
+.subchart{height:110px}
+.legend-l{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.76rem;color:var(--mute);margin:8px 8px 0}
+.legend-l span::before{content:"";display:inline-block;width:12px;height:2px;margin:0 6px 3px 0;background:var(--c);vertical-align:middle}
+
+/* chart reading */
+.sum-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bias{font-weight:600;font-size:.95rem;border-radius:6px;padding:3px 10px}
+.bias.bullish{color:var(--buy);background:var(--buy-bg)} .bias.bearish{color:var(--sell);background:var(--sell-bg)}
+.bias.mixed{color:var(--amber-text);background:var(--amber-soft)}
+.evid{flex:1;min-width:160px;display:flex;flex-direction:column;gap:4px}
+.evid-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line)}
+.evid-bar i{display:block;height:100%}
+.evid-l{display:flex;justify-content:space-between;font-size:.76rem;color:var(--mute)}
+.headline{margin:12px 0 4px;color:var(--ink);max-width:70ch}
+.hl{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.hl li{border:1px solid var(--line-soft);background:var(--panel-2);border-radius:var(--radius);padding:9px 11px;cursor:pointer}
+.hl li:hover{border-color:var(--line)}
+.hl .n{font-size:.86rem;font-weight:500;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.read-tabs{display:flex;gap:4px;overflow-x:auto;margin:18px -18px 0;padding:0 18px 2px;border-bottom:1px solid var(--line-soft);scrollbar-width:thin}
+.read-tabs button{appearance:none;border:0;background:none;color:var(--ink-2);font:inherit;font-size:.88rem;font-weight:500;padding:9px 10px;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;gap:6px;align-items:center}
+.read-tabs button:hover{color:var(--ink)}
+.read-tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--amber)}
+.read-tabs .c{font-size:.72rem;color:var(--mute);background:var(--panel-2);border-radius:999px;padding:0 6px}
+.fds{list-style:none;margin:0;padding:0}
+.fd{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.fd:last-child{border-bottom:0}
+.fd-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.fd-n{font-weight:500}
+.fd-d{font-size:.88rem;color:var(--ink-2);margin-top:4px;max-width:72ch}
+details.checked{margin-top:12px;font-size:.86rem}
+details.checked summary{cursor:pointer;color:var(--mute)}
+details.checked ul{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px}
+details.checked li{color:var(--mute)}
+details.checked li b{color:var(--ink-2);font-weight:500}
+.rp{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:14px}
+.rp-out{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:16px}
+.rp-out .tile .v{font-size:1.15rem}
+.rp-warn{margin-top:12px;font-size:.86rem;color:var(--sell)}
+.chart-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 18px 6px}
+.chart-h .spacer{flex:1}
+.chart-b{padding:0 10px 10px}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="back" id="backLink" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Today</a>
+    <span class="spacer"></span>
+    <span class="mute small" id="asOf"></span>
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"></button>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="hero">
+    <div>
+      <h1 class="tick" id="hSym">—</h1>
+      <div class="name" id="hName">Loading…</div>
+      <div class="ctx" id="hSub"></div>
+    </div>
+    <div class="px">
+      <div class="last num" id="hPrice">—</div>
+      <div class="day" id="hDay"></div>
+    </div>
+  </section>
+
+  <section class="stats" id="stats" hidden>
+    <div class="stat"><div class="k">52-week range</div><div class="range"><i id="rangeDot"></i></div><div class="range-l"><span id="rLo"></span><span id="rPos" class="mute"></span><span id="rHi"></span></div></div>
+    <div class="stat"><div class="k">Market value</div><div class="v num" id="sCap">—</div></div>
+    <div class="stat"><div class="k">Traded per day (20-day avg, IEX)</div><div class="v num" id="sVol">—</div></div>
+  </section>
+
+  <div class="layout">
+    <div class="col">
+      <section class="panel" aria-labelledby="vTitle">
+        <div class="panel-h"><h2 id="vTitle">Scanner verdict</h2></div>
+        <div class="panel-b" id="verdictCard"><div class="skeleton"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="chart-h">
+          <h2>Price chart</h2><span class="spacer"></span>
+          <div class="seg" role="group" aria-label="Chart range">
+            <button type="button" data-tf="1d" aria-pressed="false">1D</button>
+            <button type="button" data-tf="1m" aria-pressed="false">1M</button>
+            <button type="button" data-tf="6m" aria-pressed="false">6M</button>
+            <button type="button" data-tf="1y" aria-pressed="true">1Y</button>
+          </div>
+        </div>
+        <div class="chart-tools" role="group" aria-label="Chart layers">
+          <button type="button" class="chip-t" data-layer="ma" aria-pressed="true"><i style="background:var(--ov1)"></i>Averages</button>
+          <button type="button" class="chip-t" data-layer="bb" aria-pressed="false"><i style="background:var(--ov2)"></i>Bollinger</button>
+          <button type="button" class="chip-t" data-layer="vol" aria-pressed="true"><i style="background:var(--ov4)"></i>Volume</button>
+          <button type="button" class="chip-t" data-layer="levels" aria-pressed="true"><i style="background:var(--buy)"></i>Support / resistance</button>
+          <button type="button" class="chip-t" data-layer="marks" aria-pressed="true"><i style="background:var(--amber)"></i>Patterns &amp; gaps</button>
+          <button type="button" class="chip-t" data-layer="zones" aria-pressed="false"><i style="background:var(--ov3)"></i>Zones</button>
+          <button type="button" class="chip-t" data-layer="fib" aria-pressed="false"><i style="background:var(--ov3)"></i>Fibonacci</button>
+          <button type="button" class="chip-t" data-layer="rsi" aria-pressed="true"><i style="background:var(--ov2)"></i>RSI</button>
+          <button type="button" class="chip-t" data-layer="macd" aria-pressed="false"><i style="background:var(--ov1)"></i>MACD</button>
+        </div>
+        <div class="chart-b">
+          <div class="chart" id="chart"></div>
+          <div class="sub" id="rsiWrap"><span class="sub-l">RSI 14 <b id="rsiNow"></b></span><div class="subchart" id="rsiChart"></div></div>
+          <div class="sub" id="macdWrap" hidden><span class="sub-l">MACD 12/26/9</span><div class="subchart" id="macdChart"></div></div>
+          <p class="note" id="chartNote" style="padding:0 8px" hidden>Overlays, patterns and RSI/MACD are drawn on daily charts (1M, 6M, 1Y). Support/resistance and Fibonacci levels stay on the 1D view.</p>
+          <p class="legend-l" id="chartLegend"></p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="rdTitle" id="readPanel">
+        <div class="panel-h"><h2 id="rdTitle">Chart reading</h2>
+          <p class="mute small">Every technique from the chart-reading playbook, checked on this stock: trend, levels, gaps, candles, patterns, volume, indicators, liquidity and context. It describes the chart; the scanner verdict above is the tested signal.</p></div>
+        <div class="panel-b">
+          <div id="readSum"><div class="skeleton"></div></div>
+          <div class="read-tabs" role="tablist" aria-label="Chart-reading categories" id="readTabs"></div>
+          <div id="readBody"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="indTitle">
+        <div class="panel-h"><h2 id="indTitle">What the indicators say</h2></div>
+        <div class="tiles" id="tiles"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel" aria-labelledby="lvTitle">
+        <div class="panel-h"><h2 id="lvTitle">Levels</h2><p class="mute small">Key prices from the daily chart, highest first. Not financial advice.</p></div>
+        <ul class="levels" id="levelsTable"><li><div class="skeleton"></div></li></ul>
+        <p class="note" id="lvNote" style="padding:0 18px 16px" hidden></p>
+      </section>
+
+      <section class="panel" aria-labelledby="fTitle">
+        <div class="panel-h"><h2 id="fTitle">Company health</h2></div>
+        <ul class="kv" id="fundTable"><li><div class="skeleton" style="width:100%"></div></li></ul>
+        <p class="note" id="fundNotes" style="padding:0 18px 16px" hidden></p>
+      </section>
+
+      <section class="panel" aria-labelledby="sTitle">
+        <div class="panel-h"><h2 id="sTitle">News and analysts</h2></div>
+        <div class="panel-b" id="sentCard"><div class="skeleton"></div></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+{{COMMON_JS}}
+const SYM = (QS.get('symbol') || '').toUpperCase();
+$('backLink').href = homeUrl();
+let CH = null, chartTf = '1y';
+initTheme('themeBtn', () => {
+  if (CH) CH.theme();
+  // recolour everything drawn from CSS variables
+  Object.keys(OV).forEach(k => { try { CH.chart.removeSeries(OV[k]); } catch (e) {} delete OV[k]; });
+  Object.values(SUB).forEach(sc => sc.chart.remove()); SUB = {};
+  applyLayers();
+});
+
+function fmtCap(musd) {
+  if (musd == null) return '—';
+  if (musd >= 1e6) return '$' + (musd / 1e6).toLocaleString('en-US', {maximumFractionDigits: 2}) + 'T';
+  if (musd >= 1000) return '$' + (musd / 1000).toLocaleString('en-US', {maximumFractionDigits: 1}) + 'B';
+  return '$' + musd.toLocaleString('en-US', {maximumFractionDigits: 0}) + 'M';
+}
+function fmtBig(v) {
+  if (v == null) return '—';
+  if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+// plain meaning of %B and bandwidth (Breakout level / %B / Bandwidth wording kept stable)
+function pctBText(v) {
+  if (v == null) return '—';
+  if (v >= 1) return 'above the upper band (breakout territory)';
+  if (v <= 0) return 'below the lower band (capitulation/freefall)';
+  if (v >= 0.45 && v <= 0.55) return 'on the 20-day average';
+  if (v < 0.25) return 'hugging the lower band';
+  if (v > 0.75) return 'pressing the upper band';
+  return 'inside the bands';
+}
+function bwText(c) {
+  if (!c) return '—';
+  if (c === 'coiled') return 'coiled — at the tight end of its last 126 sessions, a big move often follows';
+  if (c === 'wide') return 'wide — at the stretched end of its last 126 sessions';
+  return 'normal — mid-range over its last 126 sessions';
+}
+function rsiText(v) {
+  if (v == null) return '—';
+  if (v < 30) return 'Oversold — sellers may be exhausted';
+  if (v < 40) return 'Weak, close to oversold';
+  if (v > 70) return 'Overbought — buyers may be stretched';
+  if (v > 60) return 'Strong, close to overbought';
+  return 'Neutral';
+}
+
+document.querySelectorAll('[data-tf]').forEach(b => b.onclick = () => {
+  chartTf = b.dataset.tf;
+  document.querySelectorAll('[data-tf]').forEach(x => x.setAttribute('aria-pressed', x.dataset.tf === chartTf));
+  drawChart();
+});
+// ---------------------------------------------------------------- chart layers
+let AN = null, BARS = [];
+const LAYERS = {ma: true, bb: false, vol: true, levels: true, marks: true, zones: false, fib: false, rsi: true, macd: false};
+try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('sb-layers') || '{}')); } catch (e) {}
+const OV = {}; let PRICE_LINES = [], SUB = {};
+function lineOpts(color, extra) {
+  return Object.assign({color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false}, extra || {});
+}
+function biasColor(b) { return b === 'bull' ? cssVar('--buy') : b === 'bear' ? cssVar('--sell') : cssVar('--mute'); }
+function ensureSeries() {
+  const c = CH.chart;
+  const mk = (k, o) => { if (!OV[k]) OV[k] = c.addLineSeries(o); return OV[k]; };
+  mk('sma20', lineOpts(cssVar('--ov1'), {lineWidth: 1}));
+  mk('sma50', lineOpts(cssVar('--ov2')));
+  mk('sma200', lineOpts(cssVar('--ov3'), {lineWidth: 2}));
+  mk('bbu', lineOpts(cssVar('--ov2'), {lineStyle: 2, lineWidth: 1}));
+  mk('bbl', lineOpts(cssVar('--ov2'), {lineStyle: 2, lineWidth: 1}));
+  mk('tlu', lineOpts(cssVar('--amber'), {lineWidth: 1, lineStyle: 0}));
+  mk('tll', lineOpts(cssVar('--amber'), {lineWidth: 1, lineStyle: 0}));
+  if (!OV.vol) {
+    OV.vol = c.addHistogramSeries({priceScaleId: 'vol', priceFormat: {type: 'volume'}, priceLineVisible: false, lastValueVisible: false});
+    c.priceScale('vol').applyOptions({scaleMargins: {top: 0.82, bottom: 0}});
+  }
+}
+function subChart(id) {
+  if (SUB[id]) return SUB[id];
+  const el = $(id);
+  const ch = LightweightCharts.createChart(el, {autoSize: true, layout: {background: {color: 'transparent'}, textColor: cssVar('--mute'), fontFamily: "'IBM Plex Sans', system-ui, sans-serif"},
+    grid: {vertLines: {visible: false}, horzLines: {color: cssVar('--chart-grid')}}, rightPriceScale: {borderVisible: false},
+    timeScale: {visible: false, borderVisible: false}, crosshair: {mode: 0}, handleScroll: false, handleScale: false});
+  SUB[id] = {chart: ch, s: {}};
+  CH.chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) try { ch.timeScale().setVisibleLogicalRange(r); } catch (e) {} });
+  return SUB[id];
+}
+// pad an indicator series with whitespace so it lines up bar-for-bar with the candles
+function aligned(series) {
+  const m = new Map((series || []).map(p => [p.time, p.value]));
+  return BARS.map(b => m.has(b.time) ? {time: b.time, value: m.get(b.time)} : {time: b.time});
+}
+function clearLines() { PRICE_LINES.forEach(l => { try { CH.series.removePriceLine(l); } catch (e) {} }); PRICE_LINES = []; }
+function addLine(price, title, color, style) {
+  PRICE_LINES.push(CH.series.createPriceLine({price, color, lineWidth: 1, lineStyle: style == null ? 2 : style, axisLabelVisible: true, title}));
+}
+function applyLayers() {
+  if (!CH) return;
+  ensureSeries();
+  const daily = chartTf !== '1d' && AN;
+  const C = AN ? AN.chart : null;
+  const inRange = t => BARS.length && t >= BARS[0].time && t <= BARS[BARS.length - 1].time;
+  const set = (k, data) => OV[k].setData(data || []);
+  set('sma20', daily && LAYERS.ma ? aligned(C.overlays.sma20) : []);
+  set('sma50', daily && LAYERS.ma ? aligned(C.overlays.sma50) : []);
+  set('sma200', daily && LAYERS.ma ? aligned(C.overlays.sma200) : []);
+  set('bbu', daily && LAYERS.bb ? aligned(C.overlays.bb_upper) : []);
+  set('bbl', daily && LAYERS.bb ? aligned(C.overlays.bb_lower) : []);
+  const tl = daily && LAYERS.marks && C.trendlines;
+  set('tlu', tl && inRange(tl.upper[0][0]) ? tl.upper.map(([t, v]) => ({time: t, value: v})) : []);
+  set('tll', tl && inRange(tl.lower[0][0]) ? tl.lower.map(([t, v]) => ({time: t, value: v})) : []);
+  OV.vol.setData(daily && LAYERS.vol ? C.volume.filter(v => inRange(v.time)).map(v => ({time: v.time, value: v.value,
+    color: (v.up ? cssVar('--buy') : cssVar('--sell')) + '55'})) : []);
+  CH.series.setMarkers(daily && LAYERS.marks ? C.markers.filter(m => inRange(m.ts)).map(m => ({time: m.ts,
+    position: m.pos === 'below' ? 'belowBar' : 'aboveBar', color: biasColor(m.bias),
+    shape: m.bias === 'bull' ? 'arrowUp' : m.bias === 'bear' ? 'arrowDown' : 'circle', text: m.text})) : []);
+  clearLines();
+  if (C && LAYERS.levels) C.lines.forEach(l => addLine(l.price, l.title, l.kind === 'poc' ? cssVar('--ov4') : biasColor(l.bias)));
+  if (C && LAYERS.zones) C.zones.forEach(z => {
+    const nm = z.kind === 'gap' ? 'Open gap' : z.kind === 'fvg' ? 'FVG' : 'Order block';
+    addLine(z.hi, nm + ' top', cssVar('--ov3'), 1); addLine(z.lo, nm + ' bottom', cssVar('--ov3'), 1);
+  });
+  if (C && LAYERS.fib) C.fib.forEach(f => addLine(f.price, 'Fib ' + (f.ratio * 100).toFixed(1) + '%', cssVar('--ov3'), 3));
+  // RSI / MACD panes
+  $('rsiWrap').hidden = !(daily && LAYERS.rsi);
+  $('macdWrap').hidden = !(daily && LAYERS.macd);
+  if (daily && LAYERS.rsi) {
+    const R = subChart('rsiChart');
+    if (!R.s.rsi) {
+      R.s.rsi = R.chart.addLineSeries(lineOpts(cssVar('--ov2'), {lastValueVisible: true}));
+      R.s.rsi.createPriceLine({price: 70, color: cssVar('--sell'), lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+      R.s.rsi.createPriceLine({price: 30, color: cssVar('--buy'), lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+    }
+    R.s.rsi.setData(aligned(C.rsi));
+    const last = C.rsi[C.rsi.length - 1];
+    $('rsiNow').textContent = last ? last.value.toFixed(1) : '';
+  }
+  if (daily && LAYERS.macd) {
+    const M = subChart('macdChart');
+    if (!M.s.h) {
+      M.s.h = M.chart.addHistogramSeries({priceLineVisible: false, lastValueVisible: false});
+      M.s.l = M.chart.addLineSeries(lineOpts(cssVar('--ov2')));
+      M.s.g = M.chart.addLineSeries(lineOpts(cssVar('--ov1')));
+    }
+    M.s.h.setData(aligned(C.macd.hist).map(p => p.value == null ? p : Object.assign(p, {color: (p.value >= 0 ? cssVar('--buy') : cssVar('--sell')) + '99'})));
+    M.s.l.setData(aligned(C.macd.line)); M.s.g.setData(aligned(C.macd.signal));
+  }
+  const r = CH.chart.timeScale().getVisibleLogicalRange();
+  Object.values(SUB).forEach(sc => { if (r) try { sc.chart.timeScale().setVisibleLogicalRange(r); } catch (e) {} });
+  $('chartNote').hidden = chartTf !== '1d';
+  document.querySelectorAll('.chip-t').forEach(b => {
+    b.setAttribute('aria-pressed', !!LAYERS[b.dataset.layer]);
+    b.disabled = chartTf === '1d' && !['levels', 'fib'].includes(b.dataset.layer);
+  });
+  const lg = [];
+  if (daily && LAYERS.ma) lg.push(['--ov1', 'SMA 20'], ['--ov2', 'SMA 50'], ['--ov3', 'SMA 200']);
+  if (daily && LAYERS.bb) lg.push(['--ov2', 'Bollinger 20, 2σ (dashed)']);
+  if (daily && LAYERS.marks && C.trendlines) lg.push(['--amber', 'Pattern trendlines']);
+  $('chartLegend').innerHTML = lg.map(([c, t]) => `<span style="--c:var(${c})">${t}</span>`).join('');
+}
+document.querySelectorAll('.chip-t').forEach(b => b.onclick = () => {
+  LAYERS[b.dataset.layer] = !LAYERS[b.dataset.layer];
+  try { localStorage.setItem('sb-layers', JSON.stringify(LAYERS)); } catch (e) {}
+  applyLayers();
+});
+async function drawChart() {
+  if (!SYM) return;
+  try {
+    const {bars} = await api('GET', '/api/candles?symbol=' + encodeURIComponent(SYM) + '&limit=200&tf=' + chartTf);
+    if (!CH) CH = makeChart($('chart'));
+    BARS = bars;
+    CH.series.setData(bars);
+    if (chartTf === '1d') CH.chart.timeScale().scrollToRealTime(); else CH.chart.timeScale().fitContent();
+    applyLayers();
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------- chart reading
+let readTab = null;
+const pillCls = b => b === 'bull' ? 'good' : b === 'bear' ? 'bad' : '';
+function fdHtml(f) {
+  return `<li class="fd"><div class="fd-h"><span class="fd-n">${esc(f.name)}</span><span class="pill ${pillCls(f.bias)}">${esc(f.status)}</span></div><p class="fd-d">${esc(f.detail)}</p></li>`;
+}
+function renderReadSummary() {
+  const S = AN.summary;
+  const tot = S.bull + S.bear || 1;
+  $('readSum').innerHTML = `<div class="sum-top"><span class="bias ${S.bias}">${S.bias === 'bullish' ? 'Leans bullish' : S.bias === 'bearish' ? 'Leans bearish' : 'Mixed'}</span>
+    <div class="evid"><div class="evid-bar" aria-hidden="true"><i style="width:${S.bull / tot * 100}%;background:var(--buy)"></i><i style="width:${S.bear / tot * 100}%;background:var(--sell)"></i></div>
+    <div class="evid-l"><span>Bullish ${S.bull}</span><span>Bearish ${S.bear}</span></div></div></div>
+    <p class="mute small" style="margin-top:6px">${S.found} of ${S.checked} techniques found on this chart</p>
+    <p class="headline">${esc(S.headline)}</p>
+    ${S.highlights.length ? '<ul class="hl">' + S.highlights.map(h => `<li data-find="${esc(h.name)}"><div class="n"><span>${esc(h.name)}</span><span class="pill ${pillCls(h.bias)}">${esc(h.status)}</span></div></li>`).join('') + '</ul>' : ''}`;
+  document.querySelectorAll('.hl li').forEach(li => li.onclick = () => {
+    const sec = AN.sections.find(s => s.items.some(f => f.name === li.dataset.find));
+    if (sec) { readTab = sec.key; renderReadTabs(); $('readTabs').scrollIntoView({behavior: 'smooth', block: 'start'}); }
+  });
+}
+function renderReadTabs() {
+  const tabs = AN.sections.map(s => ({key: s.key, title: s.title, n: s.items.filter(f => f.active).length})).concat([{key: 'risk', title: 'Risk planner'}]);
+  if (!readTab) readTab = tabs[0].key;
+  $('readTabs').innerHTML = tabs.map(t => `<button role="tab" type="button" data-rt="${t.key}" aria-selected="${t.key === readTab}">${esc(t.title)}${t.n != null ? ` <span class="c">${t.n}</span>` : ''}</button>`).join('');
+  $('readTabs').querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { readTab = b.dataset.rt; renderReadTabs(); });
+  if (readTab === 'risk') { renderRisk(); return; }
+  const sec = AN.sections.find(s => s.key === readTab);
+  const on = sec.items.filter(f => f.active), off = sec.items.filter(f => !f.active);
+  $('readBody').innerHTML = (on.length ? '<ul class="fds">' + on.map(fdHtml).join('') + '</ul>' : '<p class="empty"><b>Nothing showing in this category</b>Every technique below was checked.</p>')
+    + (off.length ? `<details class="checked"${on.length ? '' : ' open'}><summary>Checked, not present (${off.length})</summary><ul>${off.map(f => `<li><b>${esc(f.name)}</b> — ${esc(f.detail)}</li>`).join('')}</ul></details>` : '');
+}
+
+// ---------------------------------------------------------------- risk planner
+let RP = {acct: 10000, riskPct: 1};
+try { Object.assign(RP, JSON.parse(localStorage.getItem('sb-risk') || '{}')); } catch (e) {}
+function renderRisk() {
+  const R = AN.risk;
+  const stops = R.stops.map((s, i) => `<option value="${s.price.toFixed(4)}"${i === 0 ? ' selected' : ''}>${esc(s.name)} — ${fmtP(s.price)}</option>`).join('');
+  $('readBody').innerHTML = `<p class="fd-d" style="margin-top:14px">Decide what you can lose before deciding how much to buy. Position size = money at risk ÷ distance to the stop.</p>
+   <div class="rp">
+     <label class="field">Account size ($)<input id="rpAcct" type="number" min="0" step="100" value="${RP.acct}"></label>
+     <label class="field">Risk per trade (%)<input id="rpRisk" type="number" min="0.1" max="10" step="0.1" value="${RP.riskPct}"></label>
+     <label class="field">Entry price ($)<input id="rpEntry" type="number" min="0" step="0.01" value="${R.price.toFixed(2)}"></label>
+     <label class="field">Stop<select id="rpStopSel">${stops}<option value="custom">Custom…</option></select></label>
+     <label class="field" id="rpStopWrap" hidden>Custom stop ($)<input id="rpStop" type="number" min="0" step="0.01" value="${R.stops[0].price.toFixed(2)}"></label>
+     <label class="field">Target<select id="rpTgtSel">${R.targets.map(t => `<option value="${t.price != null ? 'p' + t.price.toFixed(4) : 'r' + t.mult}"${t.mult === 2 ? ' selected' : ''}>${esc(t.name)}${t.price != null ? ' — ' + fmtP(t.price) : ''}</option>`).join('')}</select></label>
+   </div>
+   <div class="rp-out" id="rpOut"></div>
+   <p class="fd-d" style="margin-top:12px" id="rpWhy"></p>
+   <p class="fd-d">Trailing stop idea: ${esc(R.trailing.name)} at <b>${fmtP(R.trailing.price)}</b> — raise it as the 22-day high rises, never lower it. Normal daily range (ATR) is ${fmtP(R.atr)}.</p>`;
+  const calc = () => {
+    const acct = +$('rpAcct').value || 0, rp = +$('rpRisk').value || 0, entry = +$('rpEntry').value || 0;
+    const sel = $('rpStopSel').value;
+    $('rpStopWrap').hidden = sel !== 'custom';
+    const stop = sel === 'custom' ? (+$('rpStop').value || 0) : +sel;
+    const per = entry - stop;
+    const tv = $('rpTgtSel').value;
+    const target = tv[0] === 'p' ? +tv.slice(1) : entry + per * +tv.slice(1);
+    RP = {acct, riskPct: rp};
+    try { localStorage.setItem('sb-risk', JSON.stringify(RP)); } catch (e) {}
+    const st = R.stops.find(s => s.price.toFixed(4) === sel);
+    $('rpWhy').textContent = st ? st.why : 'Custom stop.';
+    if (!(entry > 0) || !(per > 0)) { $('rpOut').innerHTML = '<p class="rp-warn">The stop has to be below the entry for a long trade.</p>'; return; }
+    const riskAmt = acct * rp / 100;
+    const shares = Math.floor(riskAmt / per);
+    const pos = shares * entry, rr = (target - entry) / per;
+    $('rpOut').innerHTML = [
+      ['Shares to buy', shares.toLocaleString('en-US')], ['Position size', fmtP(pos) + (acct ? ` (${(pos / acct * 100).toFixed(0)}% of account)` : '')],
+      ['Money at risk', fmtP(shares * per)], ['Risk per share', fmtP(per) + ` (${(per / entry * 100).toFixed(1)}%)`],
+      ['Target', fmtP(target)], ['Reward : risk', rr > 0 ? rr.toFixed(1) + ' : 1' : '—'],
+    ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join('')
+      + (acct && pos > acct ? '<p class="rp-warn" style="grid-column:1/-1">That position is larger than the account — the stop is too tight for this risk, or use a smaller risk %.</p>' : '')
+      + (rr > 0 && rr < 1.5 ? '<p class="rp-warn" style="grid-column:1/-1">Reward is under 1.5× the risk — many traders skip setups like this.</p>' : '');
+  };
+  ['rpAcct', 'rpRisk', 'rpEntry', 'rpStop', 'rpStopSel', 'rpTgtSel'].forEach(id => $(id).addEventListener('input', calc));
+  calc();
+}
+async function loadAnalysis() {
+  try { AN = await api('GET', '/api/analysis/' + encodeURIComponent(SYM)); }
+  catch (e) { $('readSum').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  renderReadSummary(); renderReadTabs(); applyLayers();
+}
+
+function renderVerdict(v, price) {
+  const box = $('verdictCard');
+  if (!v) { box.innerHTML = '<p class="mute">Not enough daily history to run the technical screen on this stock yet.</p>'; return; }
+  const score = v.side === 'BUY' ? v.tech_score : v.bear_score;
+  const pb = v.side === 'BUY' && v.playbook ? (v.playbook === 'dip' ? 'a dip-buy' : 'a momentum') : (v.side === 'SELL' ? 'a sell-the-rally' : 'a');
+  const reaches = v.push_bar != null && score >= v.push_bar;
+  const summary = score > 0
+    ? `Scores ${score} of 100 as ${pb} setup. ` + (reaches ? `That clears the ${v.push_bar} needed for a phone alert.` : `A phone alert needs ${v.push_bar}.`)
+    : 'No setup is firing on this chart right now.';
+  const setups = (v.setups || []).length
+    ? '<ul class="setups">' + v.setups.map(s => `<li><span>${esc(s.reason)}</span><span class="pts num">+${s.points}</span></li>`).join('') + '</ul>' : '';
+  const notes = (v.reasons || []).filter(r => !/^stop \$/.test(r));
+  const notesHtml = notes.length ? '<ul class="notes">' + notes.map(r => `<li>${esc(r)}</li>`).join('') + '</ul>' : '';
+  const counter = (v.counter_setups || []).length
+    ? `<p class="counter">Pulling the other way: ${v.counter_setups.map(s => esc(s.reason)).join('; ')}.</p>` : '';
+  const risk = score > 0 && v.stop != null ? `<div class="verdict-risk"><div class="mute small" style="margin-bottom:8px">If you take it: a stop at 2× the normal daily range, a target at 3×.</div>${ladder(price, v.stop, v.target)}</div>` : '';
+  box.innerHTML = `<div class="verdict-top">${sideBadge(v.side, v.playbook)}<span class="spacer"></span>${meter(v.rating, v.side)}</div>
+    <p class="verdict-sum">${summary}</p>${setups}${notesHtml}${counter}${risk}`;
+}
+
+function renderLevels(L, last) {
+  const rows = (L.rows || []).filter(r => r.value != null).map(r => ({nm: r.name, basis: r.basis, v: r.value, d: r.distance_text}));
+  rows.push({nm: 'Price now', basis: '', v: last, here: true});
+  rows.sort((a, b) => b.v - a.v);
+  $('levelsTable').innerHTML = rows.map(r => r.here
+    ? `<li class="here"><span class="nm">Price now</span><span class="val num">${fmtP(r.v)}</span><span class="dist"></span></li>`
+    : `<li><span class="nm">${esc(r.nm)}<small>${esc(r.basis || '')}</small></span><span class="val num">${fmtP(r.v)}</span><span class="dist">${esc(r.d || '')}</span></li>`).join('');
+  if (L.buy_zone && L.buy_zone.note) {
+    $('lvNote').hidden = false;
+    $('lvNote').textContent = 'Breakout level: ' + L.buy_zone.note + (L.buy_zone.distance_text ? ` (the level sits ${L.buy_zone.distance_text} the current price)` : '');
+  }
+}
+
+function renderTiles(L) {
+  const t = [];
+  const r = L.rsi14;
+  t.push(`<div class="tile"><div class="k">Momentum (RSI 14)</div><div class="v num">${r == null ? '—' : r.toFixed(0)}</div>
+    <div class="gauge" aria-hidden="true">${r == null ? '' : `<i style="left:${Math.max(0, Math.min(100, r))}%"></i>`}</div><div class="t">${rsiText(r)}</div></div>`);
+  const paced = L.vol_ratio_partial && L.vol_ratio_paced != null;
+  const vr = paced ? L.vol_ratio_paced : L.vol_ratio;
+  t.push(`<div class="tile"><div class="k">${paced ? 'Volume vs normal pace' : 'Volume vs normal'}</div><div class="v num">${vr == null ? '—' : vr.toFixed(1) + '×'}</div>
+    <div class="t">${vr == null ? '' : vr >= 2 ? 'Heavy — big players are active' : vr >= 1.5 ? 'Busy' : vr < 0.7 ? 'Light — little conviction' : 'About normal'}${paced
+      ? `. So far today ${L.vol_ratio.toFixed(2)}× a full day — adjusted for the time of day (most volume trades near the open and close).` : ''}</div></div>`);
+  t.push(`<div class="tile"><div class="k">Band position (%B)</div><div class="v num">${L.pct_b == null ? '—' : L.pct_b.toFixed(2)}</div><div class="t">${pctBText(L.pct_b)}</div></div>`);
+  t.push(`<div class="tile"><div class="k">Band width (Bandwidth)</div><div class="v num">${L.bandwidth == null ? '—' : L.bandwidth.toFixed(3)}</div><div class="t">${bwText(L.bandwidth_context)}</div></div>`);
+  $('tiles').innerHTML = t.join('');
+}
+
+function renderFund(f, last) {
+  const ul = $('fundTable');
+  if (!f || f.error) {
+    const e = (f && f.error) || '';
+    const msg = /FINNHUB_KEY/.test(e) ? 'Add a free Finnhub key (FINNHUB_KEY in .env) to see annual-report scores.'
+      : /no annual/i.test(e) ? 'No annual report on file for this company (common for funds and recent listings).'
+      : e || 'No annual report data yet.';
+    ul.innerHTML = `<li><span class="mute">${esc(msg)}</span></li>`; return;
+  }
+  const p = f.piotroski, den = (p && p.evaluable != null && p.evaluable < p.of) ? p.evaluable : (p ? p.of : 9);
+  const pcls = p && p.score != null ? (p.score >= 7 ? 'good' : p.score <= 3 ? 'bad' : 'warn') : '';
+  const z = f.altman || {};
+  const [zr, zc] = z.zone === 'safe' ? ['Low', 'good'] : z.zone === 'distress' ? ['High', 'bad'] : z.zone === 'grey' ? ['Moderate', 'warn'] : ['n/a', ''];
+  const fv = f.dcf && f.dcf.fair_value, vs = fv != null && last ? (fv - last) / last * 100 : null;
+  ul.innerHTML = `
+    <li><span>Financial health <span class="mute small">Piotroski</span></span><span class="pill ${pcls}">${p && p.score != null ? p.score + '/' + den : 'n/a'}</span></li>
+    <li><span>Bankruptcy risk <span class="mute small">Altman Z ${z.z != null ? z.z.toFixed(1) : ''}</span></span><span class="pill ${zc}">${zr}</span></li>
+    <li><span>Fair value estimate <span class="mute small">cash-flow model</span></span><span>${fv != null ? fmtP(fv) : 'n/a'}${vs != null ? ` <span class="small ${vs >= 0 ? 'up' : 'down'}">${fmtPct(vs, 0)}</span>` : ''}</span></li>
+    <li><span>Annual report</span><span>${esc(f.data_year || '—')}</span></li>`;
+  if (f.notes && f.notes.length) { $('fundNotes').hidden = false; $('fundNotes').textContent = f.notes.join('. ') + '.'; }
+}
+
+function renderSent(s) {
+  const ac = s.analyst_counts || {};
+  const b = (ac.buy || 0) + (ac.strongBuy || 0), h = ac.hold || 0, se = (ac.sell || 0) + (ac.strongSell || 0), tot = b + h + se;
+  const tone = s.label || 'neutral';
+  const news = (s.n || 0) > 0 || (s.marketaux_n || 0) > 0
+    ? `<p>Headlines read <b>${esc(tone)}</b> <span class="mute small">(${(s.n || 0) + (s.marketaux_n || 0)} recent articles, score ${s.news != null ? (s.news >= 0 ? '+' : '') + s.news.toFixed(2) : '—'})</span></p>`
+    : '<p class="mute">No recent headlines found.</p>';
+  const an = tot
+    ? `<p style="margin-top:14px">${tot} analysts</p><div class="analysts" aria-hidden="true"><i style="width:${b / tot * 100}%;background:var(--buy)"></i><i style="width:${h / tot * 100}%;background:var(--mute)"></i><i style="width:${se / tot * 100}%;background:var(--sell)"></i></div>
+       <div class="legend"><span style="--c:var(--buy)">${b} buy</span><span style="--c:var(--mute)">${h} hold</span><span style="--c:var(--sell)">${se} sell</span></div>`
+    : '<p class="mute" style="margin-top:10px">No analyst ratings available.</p>';
+  $('sentCard').innerHTML = news + an;
+}
+
+async function load() {
+  document.title = SYM ? SYM + ' — Stockbot' : 'Stock — Stockbot';
+  if (!SYM) { $('hName').textContent = 'No stock chosen. Go back and tap a symbol.'; return; }
+  $('hSym').textContent = SYM;
+  let d;
+  try { d = await api('GET', '/api/stock/' + encodeURIComponent(SYM)); }
+  catch (e) { $('hName').textContent = 'Could not load ' + SYM + ': ' + e.message; return; }
+  const p = d.price, co = d.company || {}, st = d.stats || {};
+  $('hName').textContent = co.name && co.name.toUpperCase() !== SYM ? co.name : '';
+  $('hSub').textContent = [co.industry || co.sector, co.exchange].filter(Boolean).join(', ');
+  $('hPrice').textContent = fmtP(p.last);
+  const dp = p.day_pct;
+  $('hDay').innerHTML = (dp == null ? '' : `<span class="${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</span>`) + (p.live ? '' : ' <span class="pill">Last close</span>');
+  if (st.as_of) $('asOf').textContent = 'Daily data as of ' + new Date(st.as_of * 1000).toLocaleDateString('en-US', {timeZone: 'America/New_York', month: 'short', day: 'numeric'});
+  if (st.low_52w != null && st.high_52w != null) {
+    $('stats').hidden = false;
+    const pos = st.pct_of_52w_range == null ? null : Math.max(0, Math.min(100, st.pct_of_52w_range));
+    $('rangeDot').style.left = (pos == null ? 50 : pos) + '%';
+    $('rLo').textContent = fmtP(st.low_52w); $('rHi').textContent = fmtP(st.high_52w);
+    $('rPos').textContent = pos == null ? '' : pos.toFixed(0) + '% of the way up';
+    $('sCap').textContent = fmtCap(co.market_cap_musd);
+    $('sVol').textContent = fmtBig(st.avg_dollar_volume_20d);
+  }
+  renderVerdict(d.scanner, p.last);
+  renderLevels(d.levels || {}, p.last);
+  renderTiles(d.levels || {});
+  renderFund(d.fundamentals, p.last);
+  renderSent(d.sentiment || {});
+  drawChart();
+  loadAnalysis();
+}
+load();
+</script>
+</body>
+</html>

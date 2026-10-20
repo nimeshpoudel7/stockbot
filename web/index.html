@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1621">
+<title>Stockbot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+{{BASE_CSS}}
+/* ---- Today ---------------------------------------------------------- */
+.today{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start;margin-top:20px}
+.today > .chart-wrap{grid-column:1 / -1}
+@media (max-width:1020px){.today{grid-template-columns:minmax(0,1fr)}}
+.market-line{display:flex;gap:14px;align-items:center;margin-top:18px;padding:12px 16px;border-radius:var(--radius);background:var(--panel);border:1px solid var(--line-soft);font-size:.92rem;color:var(--ink-2)}
+.market-line b{color:var(--ink);font-weight:600}
+.market-line .mood-dot{flex:none}
+
+.picks-h{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:18px 18px 14px}
+.picks-h .titles{flex:1;min-width:220px}
+.picks-h h2{font-size:1.25rem}
+.picks-h p{margin-top:3px}
+.pick-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-soft)}
+.pick{display:grid;grid-template-columns:118px minmax(0,1fr) 150px;grid-template-areas:"id main rate" "id risk risk";
+  gap:8px 18px;padding:14px 18px;border-bottom:1px solid var(--line-soft);text-decoration:none;color:inherit}
+.pick:hover{background:var(--panel-2)}
+.pick:last-child{border-bottom:0}
+.pick-id{grid-area:id;display:flex;flex-direction:column;gap:2px}
+.pick-id .tick{font-size:1.28rem;line-height:1.1}
+.pick-id .price{font-size:.92rem;color:var(--ink-2)}
+.pick-main{grid-area:main;display:flex;flex-direction:column;gap:7px;min-width:0}
+.pick-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.8rem;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line-soft);border-radius:6px;padding:2px 8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-rate{grid-area:rate;justify-self:end}
+.pick-risk{grid-area:risk;max-width:520px}
+.sent{font-size:.76rem;color:var(--amber-text);display:inline-flex;align-items:center;gap:5px}
+.sent::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.when{font-size:.78rem;color:var(--mute)}
+.live-status{display:flex;align-items:center;gap:10px;padding:10px 18px;border-top:1px solid var(--line-soft);font-size:.86rem;color:var(--ink-2);flex-wrap:wrap}
+.live-status .dot{width:8px;height:8px;border-radius:50%;background:var(--mute);flex:none}
+.live-status.ok .dot{background:var(--buy);box-shadow:0 0 0 3px var(--buy-bg)}
+.live-status.stale{background:var(--sell-bg);color:var(--ink)}
+.live-status.stale .dot{background:var(--sell)}
+.live-status b{font-weight:600;color:var(--ink)}
+@media (max-width:760px){.live-status{padding:10px 14px}}
+.list-foot{padding:12px 18px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+@media (max-width:760px){
+  .picks-h{padding:16px 14px 12px}
+  .pick{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"id rate" "main main" "risk risk";padding:14px}
+  .pick-id{flex-direction:row;align-items:baseline;gap:10px}
+  .pick-risk{max-width:none}
+  .list-foot{padding:12px 14px 14px}
+}
+
+/* watchlist */
+.wl-form{display:flex;gap:8px;padding:0 16px 12px}
+.wl-form input{text-transform:uppercase}
+.wl{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-soft)}
+.wl li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:9px 10px 9px 16px;border-bottom:1px solid var(--line-soft)}
+.wl li:last-child{border-bottom:0}
+.wl li.on{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--amber)}
+.wl .pick-btn{appearance:none;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;display:flex;flex-direction:column;padding:0;min-width:0}
+.wl .pick-btn .tick{font-size:1.02rem}
+.wl .px{text-align:right;line-height:1.25}
+.wl .px b{font-weight:500;display:block}
+.chg{font-size:.8rem;font-weight:500}
+.wl .rm{opacity:.6}
+.wl li:hover .rm{opacity:1}
+.closed{font-size:.7rem;color:var(--mute);font-weight:400}
+
+/* chart */
+.chart-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 18px 6px}
+.chart-h h2{font-size:1.1rem}
+.chart-h .spacer{flex:1}
+.chart-b{padding:0 10px 10px}
+
+/* ---- Alerts ---------------------------------------------------------- */
+.view-h{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:24px}
+.view-h .titles{flex:1;min-width:220px}
+.view-h h1{font-size:1.5rem}
+.view-h p{margin-top:4px;max-width:64ch}
+.alert-form{margin-top:16px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.form-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+details.more{margin-top:16px;border-top:1px solid var(--line-soft);padding-top:12px}
+details.more summary{cursor:pointer;color:var(--ink-2);font-weight:500;font-size:.9rem}
+details.more[open] summary{margin-bottom:14px}
+.alert-list{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.alert{padding:14px 16px}
+.alert-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.alert-desc{flex:1;min-width:220px}
+.alert-desc .rule{font-weight:500}
+.alert-desc .rule a{text-decoration:none}
+.alert-desc .rule a .tick{font-size:1.02rem}
+.alert-desc .meta{font-size:.82rem;color:var(--mute);margin-top:2px}
+.alert-actions{display:flex;gap:4px;flex-wrap:wrap}
+.alert.paused .rule{color:var(--ink-2)}
+.hist{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:10px}
+.hist ol{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:150px 90px 1fr;gap:12px;font-size:.86rem;padding:5px 0}
+@media (max-width:760px){.hist li{grid-template-columns:1fr auto}.hist li .d{grid-column:1 / -1;color:var(--mute)}}
+
+/* ---- Research -------------------------------------------------------- */
+.research{display:grid;gap:20px;margin-top:20px}
+.health{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:0 18px 18px;align-items:start}
+.hcard{border:1px solid var(--line-soft);border-radius:var(--radius);padding:14px;background:var(--panel-2);display:flex;flex-direction:column;gap:10px}
+.hcard-h{display:flex;align-items:center;gap:8px}
+.hcard-h .tick{font-size:1.1rem;text-decoration:none}
+.hcard-h .spacer{flex:1}
+.hrow{display:flex;justify-content:space-between;gap:10px;font-size:.88rem}
+.hrow span:first-child{color:var(--ink-2)}
+.prob{display:flex;align-items:center;gap:8px}
+.prob .bar{width:90px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.prob .bar i{display:block;height:100%;background:var(--amber)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" id="brandLink" href="#today">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#1A1404" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+      Stockbot
+    </a>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" data-view="today" aria-selected="true">Today</button>
+      <button class="tab" role="tab" data-view="alerts" aria-selected="false">Alerts</button>
+      <button class="tab" role="tab" data-view="research" aria-selected="false">Research</button>
+    </nav>
+    <span class="spacer"></span>
+    <span class="mood" id="mood" data-regime=""><span class="mood-dot"></span><span class="mood-text">Market: checking…</span></span>
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"></button>
+  </div>
+</header>
+
+<main class="shell">
+<!-- ================= TODAY ================= -->
+<section id="view-today" data-view-panel="today">
+  <div class="market-line" id="marketLine" hidden><span class="mood-dot"></span><span id="marketText"></span></div>
+
+  <div class="today">
+    <div class="panel">
+      <div class="picks-h">
+        <div class="titles">
+          <h2>Today's picks</h2>
+          <p class="mute small" id="scanWhen">Loading the latest scan…</p>
+        </div>
+        <div class="seg" role="group" aria-label="Which picks">
+          <button type="button" data-pick="buys" aria-pressed="true">Buy <span class="count" id="cBuys"></span></button>
+          <button type="button" data-pick="sells" aria-pressed="false">Sell <span class="count" id="cSells"></span></button>
+          <button type="button" data-pick="live" aria-pressed="false">Live today <span class="count" id="cLive"></span></button>
+        </div>
+      </div>
+      <div class="live-status" id="liveStatus" hidden></div>
+      <ul class="pick-list" id="pickList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
+      <div class="list-foot" id="pickFoot" hidden></div>
+    </div>
+
+    <aside class="panel" aria-labelledby="wlTitle">
+      <div class="panel-h"><h2 id="wlTitle">Watchlist</h2><span class="mute small" id="wlLive">Live prices</span></div>
+      <form class="wl-form" id="addSym" autocomplete="off">
+        <label class="sr-only" for="symInput">Add a stock symbol</label>
+        <input id="symInput" placeholder="Add a symbol, e.g. AAPL" maxlength="6" inputmode="text" autocapitalize="characters" spellcheck="false">
+        <button class="btn btn-primary" type="submit">Add</button>
+      </form>
+      <ul class="wl" id="wlList"></ul>
+    </aside>
+
+    <div class="panel chart-wrap">
+      <div class="chart-h">
+        <h2><span class="tick" id="chartSymLabel">—</span> <span class="mute small" id="chartSub"></span></h2>
+        <span class="spacer"></span>
+        <div class="seg" role="group" aria-label="Chart range">
+          <button type="button" data-tf="1d" aria-pressed="false">1D</button>
+          <button type="button" data-tf="1m" aria-pressed="false">1M</button>
+          <button type="button" data-tf="6m" aria-pressed="false">6M</button>
+          <button type="button" data-tf="1y" aria-pressed="true">1Y</button>
+        </div>
+        <a class="btn btn-s" id="chartOpen" href="#">Open details</a>
+      </div>
+      <div class="chart-b"><div class="chart" id="chart"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ALERTS ================= -->
+<section id="view-alerts" data-view-panel="alerts" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>Alerts</h1>
+      <p class="mute">Rules for your watchlist. When one triggers you get a push on your phone, then it waits out its cooldown before it can fire again.</p>
+    </div>
+    <button class="btn btn-primary" id="newAlertBtn" type="button">New alert</button>
+  </div>
+
+  <form class="panel alert-form" id="alertForm" hidden>
+    <div class="panel-h"><h2 id="formTitle">New alert</h2></div>
+    <div class="panel-b">
+      <input type="hidden" id="aId" value="">
+      <div class="form-grid">
+        <label class="field">Stock<select id="aSymbol" required></select></label>
+        <label class="field">Alert when<select id="aType" required></select></label>
+      </div>
+      <div class="form-grid" id="aParams" style="margin-top:14px"></div>
+      <details class="more">
+        <summary>More options</summary>
+        <div class="form-grid">
+          <label class="field" id="aTfWrap">Chart timeframe<select id="aTf"><option value="1m">1 minute</option><option value="5m">5 minutes</option><option value="15m">15 minutes</option><option value="1h">1 hour</option></select></label>
+          <label class="field">Only in this market<select id="aRegime"><option value="any">Any market</option><option value="bull">Bull markets only</option><option value="bear">Bear markets only</option></select></label>
+          <label class="field">Cooldown after firing (min)<input id="aCooldown" type="number" value="15" min="1"></label>
+          <label class="field">Re-arm after moving back (%)<input id="aHyst" type="number" value="0.5" step="0.1" min="0"></label>
+          <label class="field">Push priority (1 quiet – 5 urgent)<input id="aPrio" type="number" value="3" min="1" max="5"></label>
+          <label class="field">Stop watching after<input id="aExpiry" type="datetime-local"></label>
+        </div>
+        <label class="check" style="margin-top:14px"><input type="checkbox" id="aOneTime"> Fire once, then switch off</label>
+      </details>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit" id="aSubmit">Create alert</button>
+        <button class="btn btn-quiet" type="button" id="aCancel">Cancel</button>
+      </div>
+    </div>
+  </form>
+
+  <ul class="alert-list" id="alertList"></ul>
+</section>
+
+<!-- ================= RESEARCH ================= -->
+<section id="view-research" data-view-panel="research" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>Research</h1>
+      <p class="mute">Deeper checks on your watchlist: company health from the latest annual report, an experimental price model, and how each alert type would have done over the past year.</p>
+    </div>
+  </div>
+  <div class="research">
+    <div class="panel">
+      <div class="panel-h"><h2>Company health</h2><span class="spacer" style="flex:1"></span><button class="btn btn-s" type="button" id="scoresReload">Reload</button>
+        <p class="mute small">Financial health is the Piotroski score (9 checks on profit, debt and efficiency). Bankruptcy risk is the Altman Z-score. Fair value is a cash-flow estimate — rough, not a price target.</p></div>
+      <div class="health" id="healthGrid"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Price model</h2><span class="pill warn">Experimental</span>
+        <p class="mute small">Chance the stock is higher in 5 trading days, from a machine-learning model on RSI, MACD, Bollinger, volume and ATR. The hit rate is how often it was right on data it hadn't seen. Never pushed to your phone.</p></div>
+      <div class="scroll-x" style="padding:0 18px 12px"><table class="tbl"><thead><tr><th>Stock</th><th>Chance higher in 5 days</th><th>Past hit rate</th><th>Trained</th><th></th></tr></thead><tbody id="predBody"></tbody></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Alert backtest</h2><span class="spacer" style="flex:1"></span><button class="btn btn-primary btn-s" type="button" id="btRun">Run on watchlist</button>
+        <p class="mute small" id="btMsg">Replays each alert type over a year of daily bars: how often +5% came before −3%, and the average move 20 days later.</p></div>
+      <div class="scroll-x" style="padding:0 18px 12px"><table class="tbl" id="btTable" hidden><thead><tr><th>Alert type</th><th class="r">Times fired</th><th class="r">+5% before −3%</th><th class="r">Avg 20-day move</th><th class="r">Worst 20-day move</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<nav class="bottomnav" role="tablist" aria-label="Sections">
+  <button class="tab" role="tab" data-view="today" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Today</button>
+  <button class="tab" role="tab" data-view="alerts" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Alerts</button>
+  <button class="tab" role="tab" data-view="research" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-3 3 2 5-6"/></svg>Research</button>
+</nav>
+
+<script>
+{{COMMON_JS}}
+
+// ------------------------------------------------------------------ views
+let BOOTED = false;
+const VIEWS = ['today', 'alerts', 'research'];
+function showView(v, push) {
+  if (!VIEWS.includes(v)) v = 'today';
+  document.querySelectorAll('[data-view-panel]').forEach(p => p.hidden = p.dataset.viewPanel !== v);
+  document.querySelectorAll('.tab[data-view]').forEach(t => t.setAttribute('aria-selected', t.dataset.view === v));
+  if (push) history.replaceState(null, '', '#' + v + (location.search ? '' : ''));
+  if (v === 'research' && BOOTED) loadResearch();
+  if (v === 'today' && CH) setTimeout(() => CH.chart.timeScale().fitContent(), 0);
+  window.scrollTo({top: 0});
+}
+document.querySelectorAll('.tab[data-view]').forEach(t => t.onclick = () => showView(t.dataset.view, true));
+$('brandLink').onclick = e => { e.preventDefault(); showView('today', true); };
+
+// ------------------------------------------------------------------ regime
+let META = {}, REGIME = null;
+const MOOD = {
+  bull: ['Bull market', 'SPY is above its rising 200-day average. Momentum buys get the easier bar; dip buys need a stronger setup.'],
+  sideways: ['Choppy market', 'SPY has no clear trend. Dip buys get the easier bar; momentum buys need a stronger setup.'],
+  bear: ['Bear market', 'SPY is below its falling 200-day average. Dip buys get the easier bar; sell signals are paused because bear-market rallies squeeze shorts.'],
+};
+async function loadRegime() {
+  try { REGIME = await api('GET', '/api/regime'); } catch (e) { REGIME = null; }
+  const r = REGIME && REGIME.regime;
+  const [title, text] = MOOD[r] || ['Market regime unknown', 'Could not read SPY yet, so every signal uses its normal bar.'];
+  $('mood').dataset.regime = r || '';
+  $('mood').querySelector('.mood-text').textContent = title;
+  $('mood').title = text;
+  $('marketLine').hidden = false;
+  $('marketLine').querySelector('.mood-dot').style.background = r === 'bull' ? 'var(--buy)' : r === 'bear' ? 'var(--sell)' : r === 'sideways' ? 'var(--amber)' : 'var(--mute)';
+  $('marketText').innerHTML = `<b>${esc(title)}.</b> ${esc(text)}`;
+}
+
+// ------------------------------------------------------------------ picks
+let SCAN = {morning: null, watch: null}, pickTab = 'buys', showAll = false;
+// Is the US market open right now (Mon-Fri 9:30-16:00 ET)? Holidays are not
+// known here; the scanner itself skips them.
+function marketOpenNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short',
+    hour: 'numeric', minute: 'numeric', hour12: false}).formatToParts(new Date()).map(x => [x.type, x.value]));
+  if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
+  const m = (+p.hour % 24) * 60 + (+p.minute);
+  return m >= 570 && m < 960;
+}
+function renderLiveStatus() {
+  const box = $('liveStatus');
+  box.hidden = pickTab !== 'live';
+  if (box.hidden) return;
+  const L = SCAN.watch_last, open = marketOpenNow();
+  const every = (L && L.interval_min) || 15;
+  let cls = '', html;
+  if (L && L.ts) {
+    const age = (Date.now() - new Date(L.ts).getTime()) / 60000;
+    const at = etTime(L.ts, {hour: 'numeric', minute: '2-digit'});
+    const found = L.new ? `${L.new} new setup${L.new === 1 ? '' : 's'}` : 'nothing new';
+    const today = etTime(L.ts, {year: 'numeric', month: '2-digit', day: '2-digit'}) === etTime(new Date().toISOString(), {year: 'numeric', month: '2-digit', day: '2-digit'});
+    const last = `Last checked <b>${today ? at + ' ET' : etTime(L.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'}) + ' ET'}</b>, ${(L.screened || 0).toLocaleString('en-US')} stocks, ${found}${L.push_ok === false ? ' (push to phone failed, will retry)' : ''}.`;
+    if (open && age > every * 2 + 5) {
+      cls = 'stale';
+      html = `${last} No check for ${Math.round(age)} min, so the 15-minute scan may have stopped. Check <code>logs/cron.log</code> on the server.`;
+    } else if (open) {
+      cls = 'ok';
+      const next = new Date(new Date(L.ts).getTime() + every * 60000);
+      html = `${last} Next check about ${etTime(next.toISOString(), {hour: 'numeric', minute: '2-digit'})} ET.`;
+    } else {
+      html = `${last} Market closed. Checks run every ${every} minutes from 9:30 AM to 4:00 PM ET.`;
+    }
+  } else {
+    html = open ? 'The 15-minute scan has not reported in yet. The first check runs within 15 minutes of the open.'
+                : `Market closed. Checks run every ${every} minutes from 9:30 AM to 4:00 PM ET.`;
+  }
+  box.className = 'live-status ' + cls;
+  box.innerHTML = `<span class="dot" aria-hidden="true"></span><span>${html}</span>`;
+}
+function pickRow(c, side, live) {
+  const chips = cleanReasons(c.reasons).slice(0, 4).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
+  const sent = c.top_pick ? '<span class="sent">Sent to phone</span>' : '';
+  const when = live && c.time ? `<span class="when">${etTime(c.time, {hour: 'numeric', minute: '2-digit'})} ET</span>` : '';
+  return `<li><a class="pick" href="${stockUrl(c.symbol)}">
+    <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span class="price num">${fmtP(c.price)}</span></div>
+    <div class="pick-main"><div class="pick-top">${sideBadge(side, c.playbook)}${sent}${when}</div><div class="chips">${chips}</div></div>
+    <div class="pick-rate">${meter(c.rating, side)}</div>
+    <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
+  </a></li>`;
+}
+function renderPicks() {
+  const m = SCAN.morning, w = SCAN.watch;
+  const buys = (m && m.buys) || [], sells = (m && m.sells) || [], live = (w && w.entries) || [];
+  const sentB = buys.filter(c => c.top_pick).length, sentS = sells.filter(c => c.top_pick).length;
+  $('cBuys').textContent = buys.length ? (sentB || buys.length) : '';
+  $('cSells').textContent = sells.length ? (sentS || sells.length) : '';
+  $('cLive').textContent = live.length || '';
+  if (m) {
+    $('scanWhen').textContent = `Morning scan ${ago(m.ts)} · ${etTime(m.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'})} ET. Tap a stock for the full chart and levels.`;
+  } else {
+    $('scanWhen').textContent = 'The first scan runs at 8:00 AM ET on trading days.';
+  }
+  document.querySelectorAll('[data-pick]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pick === pickTab));
+  let list, side, isLive = false, emptyT, emptyS;
+  if (pickTab === 'live') {
+    list = live.slice().reverse(); isLive = true;
+    emptyT = 'No new setups yet today'; emptyS = 'New matches from the 15-minute checks show up here with the time they were found.';
+  } else {
+    side = pickTab === 'buys' ? 'BUY' : 'SELL';
+    const all = pickTab === 'buys' ? buys : sells;
+    const top = all.filter(c => c.top_pick);
+    list = showAll || !top.length ? all : top;
+    emptyT = m ? `No ${side === 'BUY' ? 'buy' : 'sell'} setups this morning` : 'No scan yet';
+    emptyS = m ? 'Nothing cleared the bar. That is normal on quiet days.' : 'Picks appear here after the 8:00 AM ET scan.';
+    const foot = $('pickFoot');
+    if (all.length > top.length && top.length) {
+      foot.hidden = false;
+      foot.innerHTML = showAll
+        ? `<button class="btn btn-s" type="button" id="toggleAll">Show only the ${top.length} sent to your phone</button>`
+        : `<button class="btn btn-s" type="button" id="toggleAll">Show all ${all.length} setups</button><span class="mute small">The rest scored lower or are under $3.</span>`;
+      $('toggleAll').onclick = () => { showAll = !showAll; renderPicks(); };
+    } else foot.hidden = true;
+  }
+  if (isLive) $('pickFoot').hidden = true;
+  renderLiveStatus();
+  const shown = list.slice(0, 120);
+  $('pickList').innerHTML = shown.length
+    ? shown.map(c => pickRow(c, isLive ? c.side : side, isLive)).join('')
+      + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}, ranked by score.</li>` : '')
+    : `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
+}
+document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { pickTab = b.dataset.pick; showAll = false; renderPicks(); });
+async function loadScanner() {
+  try { SCAN = await api('GET', '/api/scanner'); } catch (e) { return; }
+  renderPicks();
+}
+
+// ------------------------------------------------------------------ watchlist
+let SYMS = [], QUOTES = {}, chartSym = null, chartTf = '1y', CH = null;
+async function loadWatchlist() {
+  const {symbols} = await api('GET', '/api/watchlist');
+  SYMS = symbols;
+  $('aSymbol').innerHTML = symbols.map(s => `<option>${esc(s)}</option>`).join('');
+  if (!chartSym || !symbols.includes(chartSym)) selectChart(symbols[0] || null);
+  renderWatchlist();
+}
+function renderWatchlist() {
+  const ul = $('wlList');
+  if (!SYMS.length) { ul.innerHTML = '<li class="empty" style="display:block"><b>Your watchlist is empty</b>Add a symbol above to stream its price and set alerts.</li>'; return; }
+  ul.innerHTML = SYMS.map(s => {
+    const q = QUOTES[s] || {};
+    const dp = q.day_pct;
+    const chg = dp == null ? '<span class="chg mute">—</span>' : `<span class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)}</span>`;
+    return `<li class="${s === chartSym ? 'on' : ''}">
+      <button class="pick-btn" type="button" data-chart="${esc(s)}" aria-label="Show ${esc(s)} chart"><span class="tick">${esc(s)}</span>${q.stale ? '<span class="closed">Last close</span>' : ''}</button>
+      <span class="px num"><b>${q.price == null ? '…' : fmtP(q.price)}</b>${chg}</span>
+      <button class="btn btn-quiet btn-s rm" type="button" data-rm="${esc(s)}" aria-label="Remove ${esc(s)}">✕</button>
+    </li>`;
+  }).join('');
+  ul.querySelectorAll('[data-chart]').forEach(b => b.onclick = () => selectChart(b.dataset.chart));
+  ul.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    const s = b.dataset.rm;
+    if (!confirm(`Remove ${s} from your watchlist? Its live alerts stop until you add it back.`)) return;
+    try { await api('DELETE', '/api/watchlist/' + encodeURIComponent(s)); toast(`Removed ${s}`); loadWatchlist(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+async function refreshQuotes() {
+  try { QUOTES = await api('GET', '/api/quotes'); } catch (e) { return; }
+  renderWatchlist();
+  if (chartSym && QUOTES[chartSym]) {
+    const q = QUOTES[chartSym];
+    $('chartSub').innerHTML = q.price == null ? '' : `${fmtP(q.price)} <span class="${(q.day_pct || 0) >= 0 ? 'up' : 'down'}">${fmtPct(q.day_pct, 2)}</span>`;
+  }
+}
+$('addSym').onsubmit = async e => {
+  e.preventDefault();
+  const s = $('symInput').value.trim().toUpperCase();
+  if (!s) return;
+  try { await api('POST', '/api/watchlist', {symbol: s}); $('symInput').value = ''; toast(`Added ${s}`); await loadWatchlist(); selectChart(s); refreshQuotes(); }
+  catch (err) { toast(err.message, true); }
+};
+
+// ------------------------------------------------------------------ chart
+function selectChart(s) {
+  chartSym = s;
+  $('chartSymLabel').textContent = s || 'No stock selected';
+  $('chartOpen').href = s ? stockUrl(s) : '#';
+  $('chartOpen').hidden = !s;
+  renderWatchlist();
+  drawChart();
+}
+document.querySelectorAll('[data-tf]').forEach(b => b.onclick = () => {
+  chartTf = b.dataset.tf;
+  document.querySelectorAll('[data-tf]').forEach(x => x.setAttribute('aria-pressed', x.dataset.tf === chartTf));
+  drawChart();
+});
+async function drawChart() {
+  if (!chartSym) return;
+  let bars;
+  try { ({bars} = await api('GET', '/api/candles?symbol=' + encodeURIComponent(chartSym) + '&limit=200&tf=' + chartTf)); }
+  catch (e) { return; }
+  if (!CH) CH = makeChart($('chart'));
+  CH.series.setData(bars);
+  if (chartTf === '1d') CH.chart.timeScale().scrollToRealTime(); else CH.chart.timeScale().fitContent();
+}
+
+// ------------------------------------------------------------------ alerts
+const TYPE_LABEL = {
+  price_above: 'Price rises above', price_below: 'Price falls below', day_pct_change: 'Moves a % on the day',
+  high_52w: 'Makes a new 52-week high', low_52w: 'Makes a new 52-week low', atr_stop: 'Hits an ATR stop',
+  rsi_14: 'RSI crosses overbought / oversold', volume_spike: 'Volume spikes', sma_cross: 'Moving averages cross',
+  bollinger_break: 'Breaks out of its Bollinger bands', bollinger_squeeze: 'Bollinger bands squeeze',
+  fib_cross: 'Crosses a Fibonacci level', split_announced: 'Announces a stock split', buyback_announced: 'Announces a buyback',
+  news_spike: 'Gets a burst of news', sell_the_news: 'Falls after beating earnings',
+};
+const STATE = {ARMED: ['Watching', 'good'], COOLDOWN: ['Cooling down', 'warn'], TRIGGERED: ['Firing', 'warn'], EXPIRED: ['Done', '']};
+async function loadMeta() {
+  META = await api('GET', '/api/meta');
+  $('aType').innerHTML = META.alert_types
+    .slice().sort((a, b) => (TYPE_LABEL[a] || a).localeCompare(TYPE_LABEL[b] || b))
+    .map(t => `<option value="${t}">${esc(TYPE_LABEL[t] || t)}</option>`).join('');
+  $('aType').value = 'price_above';
+  renderParams();
+  $('aType').onchange = renderParams;
+}
+function renderParams() {
+  const t = $('aType').value, specs = META.param_specs[t] || {};
+  $('aParams').innerHTML = Object.entries(specs).map(([f, spec]) => {
+    if (spec.select) return `<label class="field">${esc(spec.label)}<select data-p="${f}">${spec.options.map(o => `<option${o === spec.default ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+    const [lab, dft, step] = spec;
+    return `<label class="field">${esc(lab)}<input data-p="${f}" type="number" value="${dft}" step="${step}" required></label>`;
+  }).join('');
+  $('aParams').hidden = !Object.keys(specs).length;
+  $('aTfWrap').hidden = !(META.bar_types || []).includes(t);
+}
+function collectParams() {
+  const o = {};
+  document.querySelectorAll('#aParams input,#aParams select').forEach(i => { o[i.dataset.p] = i.tagName === 'SELECT' ? i.value : parseFloat(i.value); });
+  return o;
+}
+let ALERTS = [];
+function ruleHtml(a) {
+  const d = a.description || '', s = a.symbol || '';
+  if (s && d.startsWith(s + ' ')) return `<a href="${stockUrl(s)}"><span class="tick">${esc(s)}</span></a>${esc(d.slice(s.length))}`;
+  return esc(d);
+}
+async function loadAlerts() {
+  ALERTS = await api('GET', '/api/alerts');
+  const ul = $('alertList');
+  if (!ALERTS.length) { ul.innerHTML = '<li class="panel empty"><b>No alerts yet</b>Create one to get a push when a watchlist stock does something you care about.</li>'; return; }
+  ul.innerHTML = ALERTS.map(a => {
+    const [st, cls] = a.paused ? ['Paused', ''] : (STATE[a.state] || [a.state, '']);
+    const meta = [a.one_time ? 'Fires once' : `${a.cooldown_min} min cooldown`, `priority ${a.ntfy_priority}`].join(', ');
+    return `<li class="panel alert ${a.paused ? 'paused' : ''}" id="al-${a.id}">
+      <div class="alert-row">
+        <div class="alert-desc"><div class="rule">${ruleHtml(a)}</div><div class="meta">${esc(meta)}</div></div>
+        <span class="pill ${cls}">${esc(st)}</span>
+        <div class="alert-actions">
+          <button class="btn btn-quiet btn-s" type="button" data-hist="${a.id}">History</button>
+          <button class="btn btn-quiet btn-s" type="button" data-pause="${a.id}">${a.paused ? 'Resume' : 'Pause'}</button>
+          <button class="btn btn-quiet btn-s" type="button" data-edit="${a.id}">Edit</button>
+          <button class="btn btn-quiet btn-s btn-danger" type="button" data-del="${a.id}">Delete</button>
+        </div>
+      </div>
+      <div class="hist" hidden></div>
+    </li>`;
+  }).join('');
+  ul.querySelectorAll('[data-hist]').forEach(b => b.onclick = () => toggleHistory(+b.dataset.hist));
+  ul.querySelectorAll('[data-pause]').forEach(b => b.onclick = async () => {
+    const a = ALERTS.find(x => x.id === +b.dataset.pause);
+    try { await api('PATCH', '/api/alerts/' + a.id, {paused: !a.paused}); toast(a.paused ? 'Alert resumed' : 'Alert paused'); loadAlerts(); }
+    catch (e) { toast(e.message, true); }
+  });
+  ul.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editAlert(+b.dataset.edit));
+  ul.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const a = ALERTS.find(x => x.id === +b.dataset.del);
+    if (!confirm(`Delete the alert "${a.description}"?`)) return;
+    try { await api('DELETE', '/api/alerts/' + a.id); toast('Alert deleted'); loadAlerts(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+async function toggleHistory(id) {
+  const box = document.querySelector(`#al-${id} .hist`);
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false; box.innerHTML = '<div class="skeleton"></div>';
+  try {
+    const ev = await api('GET', '/api/alerts/' + id + '/events');
+    box.innerHTML = ev.length
+      ? '<ol>' + ev.map(e => `<li><span>${etTime(e.ts, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}</span><span class="num">${fmtP(e.price)}</span><span class="d">${esc(e.detail)}</span></li>`).join('') + '</ol>'
+      : '<p class="mute small">This alert has not fired yet.</p>';
+  } catch (e) { box.innerHTML = `<p class="mute small">${esc(e.message)}</p>`; }
+}
+function openForm(editing) {
+  $('alertForm').hidden = false;
+  $('formTitle').textContent = editing ? 'Edit alert' : 'New alert';
+  $('aSubmit').textContent = editing ? 'Save changes' : 'Create alert';
+  $('newAlertBtn').hidden = true;
+  $('alertForm').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+function closeForm() {
+  $('alertForm').reset(); $('aId').value = ''; $('aType').value = 'price_above'; renderParams();
+  $('alertForm').hidden = true; $('newAlertBtn').hidden = false;
+}
+$('newAlertBtn').onclick = () => {
+  if (!SYMS.length) { toast('Add a stock to your watchlist first', true); return; }
+  closeForm(); openForm(false);
+};
+$('aCancel').onclick = closeForm;
+function editAlert(id) {
+  const a = ALERTS.find(x => x.id === id); if (!a) return;
+  $('aId').value = a.id; $('aSymbol').value = a.symbol; $('aType').value = a.type; renderParams();
+  Object.entries(a.params).forEach(([k, v]) => { const i = document.querySelector(`#aParams [data-p="${k}"]`); if (i) i.value = v; });
+  $('aTf').value = a.timeframe || '1m'; $('aRegime').value = a.regime || 'any';
+  $('aOneTime').checked = a.one_time; $('aCooldown').value = a.cooldown_min;
+  $('aExpiry').value = a.expires_at ? a.expires_at.slice(0, 16) : '';
+  $('aHyst').value = +(a.hysteresis_pct * 100).toFixed(3); $('aPrio').value = a.ntfy_priority;
+  openForm(true);
+}
+$('alertForm').onsubmit = async e => {
+  e.preventDefault();
+  const body = {symbol: $('aSymbol').value, type: $('aType').value, params: collectParams(), one_time: $('aOneTime').checked,
+    timeframe: $('aTf').value, regime: $('aRegime').value, cooldown_min: parseFloat($('aCooldown').value) || 15,
+    expires_at: $('aExpiry').value || null, hysteresis_pct: (parseFloat($('aHyst').value) || 0.5) / 100,
+    ntfy_priority: parseInt($('aPrio').value) || 3};
+  const editing = !!$('aId').value;
+  try {
+    if (editing) await api('PATCH', '/api/alerts/' + $('aId').value, body); else await api('POST', '/api/alerts', body);
+    toast(editing ? 'Changes saved' : 'Alert created'); closeForm(); loadAlerts();
+  } catch (err) { toast(err.message, true); }
+};
+
+// ------------------------------------------------------------------ research
+let researchLoaded = false;
+function loadResearch() { if (researchLoaded) return; researchLoaded = true; loadScores(); loadPredictions(); loadBacktest(); }
+function zoneTxt(z) { return z === 'safe' ? ['Low', 'good'] : z === 'distress' ? ['High', 'bad'] : z === 'grey' ? ['Moderate', 'warn'] : ['n/a', '']; }
+async function loadScores() {
+  const g = $('healthGrid');
+  g.innerHTML = '<div class="skeleton"></div>';
+  let s;
+  try { s = await api('GET', '/api/scores'); } catch (e) { g.innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  const syms = Object.keys(s);
+  if (!syms.length) { g.innerHTML = '<p class="mute">Add stocks to your watchlist to see their health.</p>'; return; }
+  g.innerHTML = syms.map(sym => {
+    const v = s[sym];
+    const head = `<div class="hcard-h"><a class="tick" href="${stockUrl(sym)}">${esc(sym)}</a><span class="mute small">${v.price != null ? fmtP(v.price) : ''}</span><span class="spacer"></span><button class="btn btn-quiet btn-s" type="button" data-refresh="${esc(sym)}">Refresh</button></div>`;
+    if (v.error) return `<div class="hcard">${head}<p class="mute small">${/not fetched/.test(v.error) ? 'Not loaded yet. Refresh pulls the latest annual report (one API call).' : esc(v.error)}</p></div>`;
+    const p = v.piotroski, den = (p && p.evaluable != null && p.evaluable < p.of) ? p.evaluable : (p ? p.of : 9);
+    const ph = p && p.score != null ? `${p.score}/${den}` : 'n/a';
+    const pcls = p && p.score != null ? (p.score >= 7 ? 'good' : p.score <= 3 ? 'bad' : 'warn') : '';
+    const [zr, zc] = zoneTxt(v.altman && v.altman.zone);
+    const fv = v.dcf && v.dcf.fair_value;
+    const pv = fv && v.price ? (v.price - fv) / fv * 100 : null;
+    return `<div class="hcard">${head}
+      <div class="hrow"><span>Financial health</span><span class="pill ${pcls}">${ph}</span></div>
+      <div class="hrow"><span>Bankruptcy risk</span><span class="pill ${zc}">${zr}</span></div>
+      <div class="hrow"><span>Fair value estimate</span><span class="num">${fv != null ? fmtP(fv) : 'n/a'}</span></div>
+      ${pv != null ? `<div class="hrow"><span>Price vs fair value</span><span class="small ${pv <= 0 ? 'up' : 'down'}">${Math.abs(pv).toFixed(0)}% ${pv <= 0 ? 'below' : 'above'} it</span></div>` : ''}
+      <div class="mute small">From the ${v.data_year || 'latest'} annual report</div>
+    </div>`;
+  }).join('');
+  g.querySelectorAll('[data-refresh]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Loading…';
+    try { await api('POST', '/api/scores/' + encodeURIComponent(b.dataset.refresh) + '/refresh'); toast('Updated ' + b.dataset.refresh); }
+    catch (e) { toast(e.message, true); }
+    loadScores();
+  });
+}
+$('scoresReload').onclick = loadScores;
+async function loadPredictions() {
+  const tb = $('predBody');
+  if (!SYMS.length) { tb.innerHTML = '<tr><td colspan="5" class="mute">Your watchlist is empty.</td></tr>'; return; }
+  const rows = await Promise.all(SYMS.map(async sym => {
+    try {
+      const p = await api('GET', '/api/predict/' + encodeURIComponent(sym));
+      const hr = p.walk_forward.hit_rate, pu = p.latest_proba_up;
+      return `<tr><td><span class="tick">${esc(sym)}</span></td>
+        <td>${pu == null ? 'n/a' : `<span class="prob"><span class="bar"><i style="width:${(pu * 100).toFixed(0)}%"></i></span>${(pu * 100).toFixed(0)}%</span>`}</td>
+        <td>${hr != null ? `${(hr * 100).toFixed(0)}% <span class="mute small">of ${p.walk_forward.tested} tests</span>` : 'n/a'}</td>
+        <td class="mute">${esc(p.trained_at.slice(0, 10))}</td>
+        <td class="r"><button class="btn btn-quiet btn-s" type="button" data-train="${esc(sym)}">Retrain</button></td></tr>`;
+    } catch (e) {
+      return `<tr><td><span class="tick">${esc(sym)}</span></td><td colspan="3" class="mute">No model yet</td><td class="r"><button class="btn btn-s" type="button" data-train="${esc(sym)}">Train</button></td></tr>`;
+    }
+  }));
+  tb.innerHTML = rows.join('');
+  tb.querySelectorAll('[data-train]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Training…';
+    try { await api('POST', '/api/predict/' + encodeURIComponent(b.dataset.train) + '/train'); toast('Model trained for ' + b.dataset.train); }
+    catch (e) { toast(e.message, true); }
+    loadPredictions();
+  });
+}
+async function loadBacktest() { try { const r = await api('GET', '/api/backtest'); if (r.ran_at) renderBacktest(r); } catch (e) {} }
+$('btRun').onclick = async () => {
+  const b = $('btRun'); b.disabled = true; b.textContent = 'Running…';
+  $('btMsg').textContent = 'Replaying a year of daily bars for each watchlist stock. This can take a minute.';
+  try { const r = await api('POST', '/api/backtest'); renderBacktest(r); toast('Backtest finished'); }
+  catch (e) { $('btMsg').textContent = 'The backtest failed: ' + e.message; }
+  b.disabled = false; b.textContent = 'Run again';
+};
+function renderBacktest(r) {
+  const fmt = v => v == null ? 'n/a' : (v * 100).toFixed(0) + '%';
+  const mv = v => v == null ? 'n/a' : `<span class="${v >= 0 ? 'up' : 'down'}">${fmtPct(v, 1)}</span>`;
+  $('btTable').hidden = false;
+  $('btMsg').textContent = r.ran_at ? 'Last run ' + ago(r.ran_at) + '. +5% before −3% above 50% means the alert tended to precede gains.' : '';
+  $('btTable').querySelector('tbody').innerHTML = Object.keys(r.results).map(t => {
+    const s = r.results[t];
+    return `<tr><td>${esc(TYPE_LABEL[t] || t)}</td><td class="r num">${s.fires}</td><td class="r num">${fmt(s.target_first_rate)}</td><td class="r num">${mv(s.avg_move_pct)}</td><td class="r num">${mv(s.worst_move_pct)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="mute">No results.</td></tr>';
+}
+
+// ------------------------------------------------------------------ boot
+initTheme('themeBtn', () => { if (CH) CH.theme(); });
+(async function init() {
+  showView((location.hash || '#today').slice(1), false);
+  try { await loadMeta(); } catch (e) { toast('Could not reach the bot: ' + e.message, true); return; }
+  await loadWatchlist();
+  BOOTED = true;
+  loadAlerts(); loadScanner(); loadRegime(); refreshQuotes();
+  if (!$('view-research').hidden) loadResearch();
+  setInterval(refreshQuotes, 2000);
+  setInterval(loadScanner, 60000);
+  setInterval(loadRegime, 600000);
+})();
+</script>
+</body>
+</html>
