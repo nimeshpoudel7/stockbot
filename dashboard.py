@@ -23,11 +23,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import indicators as ind
 from alerts import BAR_TYPES, EVENT_TYPES, TICK_TYPES, describe
-from scanner import (SCAN_MORNING_KEY, SCAN_TRENDING_KEY, SCAN_WATCH_KEY,
+from scanner import (SCAN_MORNING_KEY, SCAN_TOP10_KEY, SCAN_WATCH_KEY,
                      SCAN_WATCH_LAST_KEY)
 
 import fundamentals
 import scanner as scanner_mod
+import scorecard
 import sentiment as sentiment_mod
 
 ALERT_TYPES = sorted(TICK_TYPES | BAR_TYPES | EVENT_TYPES)
@@ -526,10 +527,18 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             except (ValueError, TypeError):
                 return None
 
+        def _scorecard():
+            try:
+                return scorecard.summary(store)
+            except Exception:  # noqa: BLE001 - never breaks the page
+                return None
+
         return {"morning": _poller(SCAN_MORNING_KEY),
                 "watch": _poller(SCAN_WATCH_KEY),
                 "watch_last": _poller(SCAN_WATCH_LAST_KEY),
-                "trending": _poller(SCAN_TRENDING_KEY)}
+                "top10": _poller(SCAN_TOP10_KEY),
+                "scorecard": _scorecard()}
+
 
     # ---- stock detail ----------------------------------------------------
     PROFILE_TTL_SECS = 24 * 3600   # company profile: one Finnhub call/day

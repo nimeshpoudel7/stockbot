@@ -1,0 +1,146 @@
+{
+ "meta": {
+  "train_period": "2024-05-21 to 2025-08-12",
+  "test_period": "2025-08-12 to 2026-10-02",
+  "rows": 132572,
+  "horizon_days": 5,
+  "top": 10,
+  "note": "Weights chosen on the train period only (worst of its two halves), then measured once on the later test period. Correct = closed higher (BUY) / lower (SELL) 5 trading days after buying the next open. 824 US stocks, liquid >= $5M/day."
+ },
+ "BUY": {
+  "weights": {
+   "setup": 0.0,
+   "chart": 2.0,
+   "pullback": 2.0,
+   "action": 1.0,
+   "weakclose": 2.0,
+   "trend": 0.0,
+   "rs": 1.0
+  },
+  "min_score": 0.6,
+  "train": {
+   "n": 342,
+   "hit": 59.1,
+   "avg": 0.71,
+   "per_day": 1.2,
+   "target_first": 25.1,
+   "stop_first": 31.6
+  },
+  "test": {
+   "n": 446,
+   "hit": 53.8,
+   "avg": 0.38,
+   "per_day": 1.5,
+   "target_first": 20.4,
+   "stop_first": 31.6
+  },
+  "test10": {
+   "n": 446,
+   "hit": 50.9,
+   "avg": 0.68,
+   "per_day": 1.5,
+   "target_first": 20.4,
+   "stop_first": 31.6
+  },
+  "test3": {
+   "n": 446,
+   "hit": 53.4,
+   "avg": 0.29,
+   "per_day": 1.5,
+   "target_first": 20.4,
+   "stop_first": 31.6
+  },
+  "base_test": {
+   "n": 70018,
+   "hit": 50.2,
+   "avg": 0.14,
+   "per_day": 243.1,
+   "target_first": 18.2,
+   "stop_first": 34.0
+  },
+  "setup_only_test": {
+   "n": 1609,
+   "hit": 53.0,
+   "avg": 0.65,
+   "per_day": 5.6,
+   "target_first": 18.0,
+   "stop_first": 31.1
+  },
+  "test_top10_nobar": {
+   "n": 1592,
+   "hit": 53.0,
+   "avg": 0.19,
+   "per_day": 5.5,
+   "target_first": 21.0,
+   "stop_first": 35.3
+  }
+ },
+ "SELL": {
+  "weights": {
+   "setup": 2.0,
+   "chart": 0.0,
+   "pullback": 1.0,
+   "action": 0.0,
+   "weakclose": 0.0,
+   "trend": 0.0,
+   "rs": 0.0
+  },
+  "min_score": 0.6,
+  "train": {
+   "n": 447,
+   "hit": 55.0,
+   "avg": -0.05,
+   "per_day": 1.6,
+   "target_first": 20.8,
+   "stop_first": 34.9
+  },
+  "test": {
+   "n": 520,
+   "hit": 54.4,
+   "avg": 0.36,
+   "per_day": 1.8,
+   "target_first": 16.9,
+   "stop_first": 32.3
+  },
+  "test10": {
+   "n": 520,
+   "hit": 53.8,
+   "avg": 0.4,
+   "per_day": 1.8,
+   "target_first": 16.9,
+   "stop_first": 32.3
+  },
+  "test3": {
+   "n": 520,
+   "hit": 52.5,
+   "avg": 0.25,
+   "per_day": 1.8,
+   "target_first": 16.9,
+   "stop_first": 32.3
+  },
+  "base_test": {
+   "n": 70018,
+   "hit": 49.7,
+   "avg": -0.14,
+   "per_day": 243.1,
+   "target_first": 15.5,
+   "stop_first": 35.7
+  },
+  "setup_only_test": {
+   "n": 1450,
+   "hit": 53.2,
+   "avg": 0.2,
+   "per_day": 5.0,
+   "target_first": 15.9,
+   "stop_first": 32.7
+  },
+  "test_top10_nobar": {
+   "n": 1450,
+   "hit": 54.3,
+   "avg": 0.33,
+   "per_day": 5.0,
+   "target_first": 16.5,
+   "stop_first": 32.1
+  }
+ }
+}
