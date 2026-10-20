@@ -604,8 +604,11 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             side = scanner_mod.classify_side(res)
             score = (row["composite"] if side == "BUY"
                      else row["short_composite"])
-            rating = scanner_mod.side_rating(score, side, "morning",
-                                             sent["sentiment"])
+            rating = (scanner_mod.side_rating(res["tech_score"], "BUY",
+                                              sent["sentiment"], fb)
+                      if side == "BUY" else
+                      scanner_mod.side_rating(res["bear_score"], "SELL",
+                                              sent["sentiment"], sb))
             win = res["setups"] if side == "BUY" else res["bear_setups"]
             lose = res["bear_setups"] if side == "BUY" else res["setups"]
             # Reasons list = the NON-setup lines only (fundamental overlay

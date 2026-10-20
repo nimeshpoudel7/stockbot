@@ -610,8 +610,9 @@ class TestScannerIntegration(unittest.TestCase):
         self.assertEqual(c["sentiment_n"], 3)
         _, body = push.call_args[0]
         self.assertIn("news: +0.8 | analysts: 14 buy / 4 hold / 1 sell", body)
-        # 28 of the 53-point morning BUY scale -> 5.3/10, +1.2 -> 6.5/10
-        self.assertIn("6.5/10", body)
+        # tech 28/28 with neutral fundamentals -> 10.0/10 (same as watch);
+        # +1.2 from sentiment is clamped at 10.0
+        self.assertIn("10.0/10", body)
 
     def test_run_scan_only_scores_candidates(self):
         # symbols with no setups never reach the sentiment fetch. The sine

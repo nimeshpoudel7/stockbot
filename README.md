@@ -231,10 +231,12 @@ Run manually: `python -m scanner` (scan + push) or
 `python -m scanner --dry-run` (print the ranked list, no push).
 
 **Ratings:** every setup shown to the user carries a rating out of 10 with
-one decimal (e.g. `6.8/10`): the score as a fraction of **its own side's
-scale** (BUY: 28 technical + 25 fundamental points; SELL: 100 + 30; watch
-mode uses the technical part only), so a full-strength BUY and a
-full-strength SELL both read 10.0/10. Display-only; internal scores stay raw.
+one decimal (e.g. `6.8/10`): the technical score as a fraction of **its
+own side's scale** (BUY out of 28, SELL out of 100), so a full-strength
+BUY and a full-strength SELL both read 10.0/10 — in the morning list and
+in watch mode alike. In the morning scan the fundamental bonus then moves
+it by up to ±2 (Piotroski/Altman/DCF; no data = neutral, no change).
+Display-only; internal scores and push bars stay raw points.
 
 **Sentiment overlay** (`sentiment.py`) — two free Finnhub signals, candidates
 only (never the full universe), each leg cached 24h in SQLite:

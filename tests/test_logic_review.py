@@ -172,22 +172,35 @@ class TestNewsSpikeToday(unittest.TestCase):
 class TestSideRatings(unittest.TestCase):
     def test_perfect_buy_reads_ten(self):
         self.assertEqual(
-            scanner.side_rating(scanner.BULL_TECH_MAX, "BUY", "watch"),
+            scanner.side_rating(scanner.BULL_TECH_MAX, "BUY"),
             "10.0/10")
 
     def test_sides_comparable(self):
         # half of each side's scale reads the same
-        self.assertEqual(scanner.side_rating(14, "BUY", "watch"),
-                         scanner.side_rating(50, "SELL", "watch"))
+        self.assertEqual(scanner.side_rating(14, "BUY"),
+                         scanner.side_rating(50, "SELL"))
 
     def test_bad_news_strengthens_sell(self):
-        base = float(scanner.side_rating(60, "SELL", "morning").split("/")[0])
-        bad = float(scanner.side_rating(60, "SELL", "morning", -1.0)
-                    .split("/")[0])
-        good = float(scanner.side_rating(60, "SELL", "morning", 1.0)
-                     .split("/")[0])
+        base = float(scanner.side_rating(60, "SELL").split("/")[0])
+        bad = float(scanner.side_rating(60, "SELL", -1.0).split("/")[0])
+        good = float(scanner.side_rating(60, "SELL", 1.0).split("/")[0])
         self.assertGreater(bad, base)
         self.assertLess(good, base)
+
+    def test_fundamentals_start_neutral(self):
+        # no bonus: the morning rating equals the technical (watch) rating
+        self.assertEqual(scanner.side_rating(28, "BUY", bonus=0), "10.0/10")
+        self.assertEqual(scanner.side_rating(20, "BUY", bonus=0),
+                         scanner.side_rating(20, "BUY"))
+        # bonus moves it by at most +/-2 on its own scale
+        self.assertEqual(scanner.side_rating(14, "BUY", bonus=25), "7.0/10")
+        self.assertEqual(scanner.side_rating(14, "BUY", bonus=-25), "3.0/10")
+        self.assertEqual(scanner.side_rating(50, "SELL", bonus=15), "6.0/10")
+
+    def test_morning_rating_uses_parts(self):
+        c = {"tech_score": 28, "fund_bonus": 0, "composite": 28,
+             "bear_score": 0, "short_bonus": 0, "sentiment": 0.0}
+        self.assertEqual(scanner._morning_rating(c, "BUY"), "10.0/10")
 
     def test_buy_bars(self):
         # uptrend + breakout (20) reaches the morning push...

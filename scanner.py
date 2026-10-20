@@ -75,8 +75,10 @@ Guards: weekdays + trading day + 09:30-16:00 ET via the sessions.py
 calendar; exits quietly otherwise.
 
 Display: every setup shown to the user carries a rating out of 10 with one
-decimal (e.g. 6.8/10): the score as a fraction of its own side's scale
-(side_rating) — display-only; internal scores and thresholds stay raw.
+decimal (e.g. 6.8/10): the technical score as a fraction of its own
+side's scale, plus up to +/-2 for the fundamental bonus (neutral when
+absent) and the sentiment shift (side_rating) — display-only; internal
+scores and thresholds stay raw.
 
 Sentiment (sentiment.py): ranked candidates (morning scan) and newly
 matched symbols (watch mode) get a sentiment overlay from two free Finnhub
@@ -232,8 +234,8 @@ WATCH_PUSH_MAX = 15        # cap symbols listed in one watch push
 # bars are morning 25/65 and watch 25/45.
 BULL_TECH_MAX = sum(WEIGHTS.values())        # 28 — derived, never hardcoded
 BEAR_TECH_MAX = sum(BEAR_WEIGHTS.values())   # 100 — derived, never hardcoded
-# Side scale ceilings: push bars no longer derive from these, but the
-# displayed /10 rating does (side_rating: score as a fraction of its side).
+# Fundamental bonus ceilings: push bars no longer derive from these; the
+# /10 rating maps a bonus onto ±FUND_RATING_MAX with them (side_rating).
 FUND_BONUS_MAX = 25    # fundamental_bonus ceiling: Piotroski +10, Altman +5, DCF +10
 SHORT_BONUS_MAX = 30   # short_bonus ceiling: Piotroski +10, Altman +10, DCF +10
 MORNING_BUY_BAR = 20    # composite: uptrend + breakout, or 2 setups + funds
@@ -555,29 +557,41 @@ def _rating(score: float) -> str:
     return f"{max(0.0, min(score, 100.0)) / 10.0:.1f}/10"
 
 
-def side_scale(side: str, mode: str = "morning") -> int:
-    """Max raw score for a side: tech max (+ fundamental bonus max in the
-    morning scan, which runs the overlay; watch mode doesn't)."""
-    if side == "BUY":
-        return BULL_TECH_MAX + (FUND_BONUS_MAX if mode == "morning" else 0)
-    return BEAR_TECH_MAX + (SHORT_BONUS_MAX if mode == "morning" else 0)
+FUND_RATING_MAX = 2.0  # most a full fundamental bonus can move the /10 rating
 
 
-def side_rating(score: float, side: str, mode: str = "morning",
-                sent: float = 0.0) -> str:
-    """X.X/10 display rating for a BUY or SELL score.
+def side_scale(side: str) -> int:
+    """Max technical score for a side (BUY 28, SELL 100)."""
+    return BULL_TECH_MAX if side == "BUY" else BEAR_TECH_MAX
 
-    The score is first put on 0–100 as a FRACTION OF ITS OWN SIDE'S SCALE
-    (the push bars already work this way). Rating the raw points made a
-    perfect technical BUY (28 of 28) read 2.8/10 while a single 30-point
-    SELL signal read 3.0/10.
 
-    Sentiment is signed by side: good news raises a BUY and LOWERS a SELL
-    (it argues against the short); bad news does the reverse.
+def side_rating(tech: float, side: str, sent: float = 0.0,
+                bonus: float = 0.0) -> str:
+    """X.X/10 display rating for a BUY or SELL setup.
+
+    rating = technical score as a fraction of ITS OWN SIDE'S tech scale
+             (0–10; a perfect BUY 28/28 and a perfect SELL 100/100 both
+             read 10.0)
+           + fundamental bonus as a fraction of its own max, worth up to
+             ±FUND_RATING_MAX (morning scan only; watch has no overlay)
+           + sentiment × 1.5, signed by side
+    clamped to [0, 10].
+
+    Fundamentals start from NEUTRAL: no data or a 0 bonus leaves the
+    technical rating untouched (it used to count the 25 possible bonus
+    points as missing, so a perfect tech-only BUY read 5.3/10 in the
+    morning list but 10.0/10 in watch mode). Rating raw points read a
+    perfect BUY as 2.8/10 against 3.0/10 for a one-signal SELL.
+
+    Sentiment: good news raises a BUY and LOWERS a SELL (it argues
+    against the short); bad news does the reverse.
     """
-    pct = max(0.0, min(100.0, score / side_scale(side, mode) * 100.0))
+    rating10 = max(0.0, min(10.0, tech / side_scale(side) * 10.0))
+    bonus_max = FUND_BONUS_MAX if side == "BUY" else SHORT_BONUS_MAX
+    rating10 += max(-1.0, min(1.0, bonus / bonus_max)) * FUND_RATING_MAX
+    rating10 = max(0.0, min(10.0, rating10))
     signed = sent if side == "BUY" else -sent
-    return sentiment.adjusted_rating_str(pct, signed)
+    return sentiment.adjusted_rating_str(rating10 * 10.0, signed)
 
 
 def technical_screen(bars: list[dict],
@@ -1170,7 +1184,7 @@ def _watch_entry(r: dict) -> dict:
             "side": r["side"],
             "price": r["price"],
             "score": r["score"],
-            "rating": side_rating(r["score"], r["side"], "watch",
+            "rating": side_rating(r["score"], r["side"],
                                   r.get("sentiment", 0.0)),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
@@ -1306,7 +1320,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                     r["sentiment_payload"]))
             reasons = _with_note(reasons, r)
             return (f"{r['side']}: {r['symbol']} @ {_fmt_price(r['price'])} — "
-                    f"{side_rating(r['score'], r['side'], 'watch', r.get('sentiment', 0.0))} — "
+                    f"{side_rating(r['score'], r['side'], r.get('sentiment', 0.0))} — "
                     f"{'; '.join(reasons)}")
 
         shown = fresh[:WATCH_PUSH_MAX]
@@ -1320,13 +1334,13 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                          if len(buys) != 1
                          else f"BUY SETUP: {buys[0]['symbol']} @ "
                               f"{_fmt_price(buys[0]['price'])} — "
-                              f"{side_rating(buys[0]['score'], 'BUY', 'watch', buys[0].get('sentiment', 0.0))}")
+                              f"{side_rating(buys[0]['score'], 'BUY', buys[0].get('sentiment', 0.0))}")
         if sells:
             parts.append(f"SELL SETUP: {len(sells)} new"
                          if len(sells) != 1
                          else f"SELL SETUP: {sells[0]['symbol']} @ "
                               f"{_fmt_price(sells[0]['price'])} — "
-                              f"{side_rating(sells[0]['score'], 'SELL', 'watch', sells[0].get('sentiment', 0.0))}")
+                              f"{side_rating(sells[0]['score'], 'SELL', sells[0].get('sentiment', 0.0))}")
         title = " · ".join(parts)
         body = "\n".join(lines)
         if dry_run:
@@ -1373,6 +1387,16 @@ def _candidate_reasons(c: dict, side: str) -> list[str]:
     return _with_note(reasons, c)
 
 
+def _morning_rating(c: dict, side: str) -> str:
+    """Morning-list rating: technical score + fundamental bonus, each on
+    its own scale (see side_rating)."""
+    if side == "BUY":
+        return side_rating(c["tech_score"], "BUY", c.get("sentiment", 0.0),
+                           c.get("fund_bonus", 0))
+    return side_rating(c["bear_score"], "SELL", c.get("sentiment", 0.0),
+                       c.get("short_bonus", 0))
+
+
 def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
     """Dashboard-ready entry for one morning-scan candidate — everything the
     push line shows: symbol, price, the 0–100 composite, the X.X/10 display
@@ -1382,8 +1406,7 @@ def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
     return {"symbol": c["symbol"],
             "price": c["price"],
             "score": score,
-            "rating": side_rating(score, side, "morning",
-                                  c.get("sentiment", 0.0)),
+            "rating": _morning_rating(c, side),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "sentiment": c.get("sentiment", 0.0),
@@ -1555,12 +1578,12 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     # --- output ---------------------------------------------------------------
     def _buy_line(i: int, c: dict) -> str:
         return (f"{i}. BUY: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{side_rating(c['composite'], 'BUY', 'morning', c.get('sentiment', 0.0))} — "
+                f"{_morning_rating(c, 'BUY')} — "
                 f"{'; '.join(_candidate_reasons(c, 'BUY'))}")
 
     def _sell_line(i: int, c: dict) -> str:
         return (f"{i}. SELL: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{side_rating(c['short_composite'], 'SELL', 'morning', c.get('sentiment', 0.0))} — "
+                f"{_morning_rating(c, 'SELL')} — "
                 f"{'; '.join(_candidate_reasons(c, 'SELL'))}")
 
     sections: list[str] = []
