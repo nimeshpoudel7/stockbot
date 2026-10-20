@@ -1,0 +1,20 @@
+[Unit]
+Description=Personal real-time stock alert bot (ntfy + dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+# A stock Ubuntu/Debian server has direct internet access:
+# no egress proxy, no TLS interception, no SSH-tunnel hacks needed.
+# Alpaca's websocket and plain HTTPS calls (ntfy, Finnhub) work natively.
+EnvironmentFile=__PROJECT_DIR__/.env
+ExecStart=__PROJECT_DIR__/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+# Alert state is persisted in SQLite, so a restart never re-fires alerts.
+
+[Install]
+WantedBy=multi-user.target

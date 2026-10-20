@@ -1,0 +1,10 @@
+[Unit]
+Description=Stockbot morning scan 08:00 America/Toronto Mon-Fri
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:00:00 America/Toronto
+Persistent=true
+Unit=stockbot-scan.service
+
+[Install]
+WantedBy=timers.target

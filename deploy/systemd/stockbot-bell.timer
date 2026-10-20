@@ -1,0 +1,10 @@
+[Unit]
+Description=Stockbot market-open bell 09:30 America/Toronto
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 America/Toronto
+Persistent=true
+Unit=stockbot-bell.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Personal real-time stock alert bot (ntfy + dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/goals/real-time-stock-alert-bot
+EnvironmentFile=%h/workspace/goals/real-time-stock-alert-bot/.env
+ExecStart=%h/workspace/goals/real-time-stock-alert-bot/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+# Alert state is persisted in SQLite, so a restart never re-fires alerts.
+
+[Install]
+WantedBy=default.target

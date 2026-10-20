@@ -1,0 +1,24 @@
+[Unit]
+Description=Personal real-time stock alert bot (ntfy + dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hatch/workspace/goals/real-time-stock-alert-bot
+Environment=https_proxy=http://hatch-egress-proxy:3128
+Environment=HTTPS_PROXY=http://hatch-egress-proxy:3128
+Environment=http_proxy=http://hatch-egress-proxy:3128
+Environment=HTTP_PROXY=http://hatch-egress-proxy:3128
+# VM egress goes through the HTTP proxy (no auth needed); without these,
+# requests-based calls (warm-up, regime, calendar, Finnhub) fail with SSL errors.
+Environment=SSL_CERT_FILE=/run/hatch/egress-tls/ca-bundle.pem
+Environment=REQUESTS_CA_BUNDLE=/run/hatch/egress-tls/ca-bundle.pem
+EnvironmentFile=/home/hatch/workspace/goals/real-time-stock-alert-bot/.env
+ExecStart=/home/hatch/workspace/goals/real-time-stock-alert-bot/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+# Alert state is persisted in SQLite, so a restart never re-fires alerts.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Stockbot morning market scan
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/stockbot
+ExecStart=/home/ubuntu/stockbot/.venv/bin/python -m scanner
+StandardOutput=append:/home/ubuntu/stockbot/logs/cron.log
+StandardError=append:/home/ubuntu/stockbot/logs/cron.log

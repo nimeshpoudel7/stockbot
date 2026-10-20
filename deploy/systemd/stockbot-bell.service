@@ -1,0 +1,11 @@
+[Unit]
+Description=Stockbot market-open bell
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/stockbot
+ExecStart=/home/ubuntu/stockbot/.venv/bin/python -m market_open
+StandardOutput=append:/home/ubuntu/stockbot/logs/cron.log
+StandardError=append:/home/ubuntu/stockbot/logs/cron.log

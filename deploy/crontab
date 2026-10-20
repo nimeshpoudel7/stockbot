@@ -1,0 +1,16 @@
+# Stockbot crontab (installed by deploy/install.sh into the user's crontab).
+# IMPORTANT (learned Oct 20, 2026): the Oracle Ubuntu cron daemon IGNORED
+# CRON_TZ — clock-sensitive jobs fired in server time (UTC), 4h early.
+# Only cadence jobs (timezone-agnostic) belong in cron. The two
+# clock-sensitive jobs run as systemd timers with explicit timezones:
+#   stockbot-scan.timer  OnCalendar=Mon..Fri 08:00:00 America/Toronto
+#   stockbot-bell.timer  OnCalendar=*-*-*  09:30:00 America/Toronto
+# (unit files in deploy/systemd/). The Python code also uses
+# America/Toronto internally for its market-hours guards.
+
+# Real-time watch: every 15 min — the script exits quietly outside 09:30-16:00 ET
+# on trading days, so the cadence line can stay unconditional.
+*/15 * * * * cd __PROJECT_DIR__ && .venv/bin/python -m scanner --watch >> logs/cron.log 2>&1
+
+# Keepalive: every 15 min — restarts the bot service only if it went down.
+*/15 * * * * cd __PROJECT_DIR__ && deploy/keepalive_vps.sh >> logs/cron.log 2>&1
