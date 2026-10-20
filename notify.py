@@ -18,6 +18,25 @@ import requests
 log = logging.getLogger("stockbot.notify")
 
 
+NTFY_MAX_BYTES = 4096   # longer messages arrive as a file attachment
+SAFE_BYTES = 3900
+
+
+def fit_message(message: str, limit: int = SAFE_BYTES) -> str:
+    """Trim to fit one ntfy message. Cuts at a blank line (between picks)
+    when it can, and says how much was left out."""
+    raw = message.encode("utf-8")
+    if len(raw) <= limit:
+        return message
+    note = "\n\n…more on the dashboard"
+    budget = limit - len(note.encode("utf-8"))
+    cut = raw[:budget].decode("utf-8", errors="ignore")
+    para = cut.rfind("\n\n")
+    if para > budget // 2:
+        cut = cut[:para]
+    return cut.rstrip() + note
+
+
 def send_ntfy(server: str, topic: str, title: str, message: str,
               priority: int = 3, tags: list[str] | None = None,
               timeout: int = 30, retries: int = 2) -> bool:
@@ -33,7 +52,11 @@ def send_ntfy(server: str, topic: str, title: str, message: str,
         "priority": priority,
         "tags": tags or ["chart_with_upwards_trend"],
     }
-    url = f"{server.rstrip('/')}/{topic}"
+    # JSON publishing goes to the server ROOT; the topic travels in the body.
+    # Posting JSON to /<topic> makes ntfy treat the whole JSON document as
+    # the message text — which is exactly what showed up on the phone.
+    url = server.rstrip('/') + '/'
+    message = fit_message(message)
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:

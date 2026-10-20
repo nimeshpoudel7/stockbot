@@ -215,13 +215,16 @@ TECH_CAP = 100
 BEAR_CAP = 100
 MIN_TECH_BARS = 60        # need at least this many daily bars to score
 FUND_TOP_N = 25           # fundamental overlay applies to top-N per side
-SCAN_TOP_N = 12           # candidates pushed per side
+SCAN_TOP_N = 6            # candidates pushed per side (6 + 6 readable
+                          # blocks fit in one ntfy message, 4 KB cap)
 UNIVERSE_TTL_DAYS = 7
 UNIVERSE_CACHE_KEY = "scanner_universe_v2"  # bumped: universe is now all US equities
 WATCH_SEEN_KEY = "scanner_watch_seen"  # {"date": "YYYY-MM-DD", "symbols": [...]}
 SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboard
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
-WATCH_PUSH_MAX = 15        # cap symbols listed in one watch push
+SCAN_WATCH_LAST_KEY = "scanner_watch_last"  # poller key: last watch pass ran
+WATCH_INTERVAL_MIN = 15    # cron cadence of the watch pass (deploy/crontab)
+WATCH_PUSH_MAX = 12        # cap symbols listed in one watch push (4 KB)
 
 # --- Scales and push bars ---------------------------------------------------
 # Every playbook scores 0-100, so BUY and SELL share one scale and the
@@ -692,10 +695,10 @@ def technical_screen(bars: list[dict],
     dip: list[tuple[str, int, str]] = []
     if rsi14 is not None and rsi14 < 30:
         dip.append(("oversold_rsi30", DIP_WEIGHTS["oversold_rsi30"],
-                    f"RSI {rsi14:.0f} — deeply oversold"))
+                    f"RSI {rsi14:.1f} — deeply oversold"))
     elif rsi14 is not None and rsi14 < 35:
         dip.append(("oversold_rsi35", DIP_WEIGHTS["oversold_rsi35"],
-                    f"RSI {rsi14:.0f} — oversold"))
+                    f"RSI {rsi14:.1f} — oversold"))
     if bb_lo is not None and price < bb_lo:
         dip.append(("below_lower_band", DIP_WEIGHTS["below_lower_band"],
                     f"closed below lower Bollinger band ({_fmt_price(bb_lo)})"))
@@ -1231,6 +1234,49 @@ def _structured(row: dict, side: str) -> dict:
                        for n, p, r in setups]}
 
 
+PUSH_REASON_LINES = 3     # setup lines per pick in a phone push
+
+
+def _pct(a: float, b: float) -> str:
+    v = (a - b) / b * 100 if b else 0.0
+    return f"{'+' if v >= 0 else '−'}{abs(v):.1f}%"
+
+
+def _friendly(line: str) -> str:
+    """'news: +0.4 | analysts: 25 buy / …' -> 'News +0.4 · Analysts 25 buy / …'"""
+    return (line.replace("news: ", "News ", 1).replace(" | analysts: ", " · Analysts ")
+            .replace(" | marketaux: ", " · Marketaux "))
+
+
+def push_block(row: dict, side: str, rating: str,
+               reasons: list[str]) -> str:
+    """One pick as a short, phone-readable block:
+
+        🟢 BUY: NVDA  $217.09  ·  8.4/10  ·  dip buy
+        • RSI 27 — deeply oversold
+        • closed below lower Bollinger band ($210.10)
+        • news: +0.4 | analysts: 40 buy / 6 hold / 1 sell
+        Stop $205.28 (−5.4%)  ·  Target $234.79 (+8.2%)
+    """
+    tag = _playbook_tag(row, side)
+    head = (f"{'🟢' if side == 'BUY' else '🔴'} {side}: {row['symbol']}  "
+            f"{_fmt_price(row['price'])}  ·  {rating}"
+            + (f"  ·  {tag}" if tag else ""))
+    body = [r for r in reasons if r and r != tag
+            and not r.startswith("stop $")]
+    setup = [r for r in body if not r.startswith(("news:", "⚠"))]
+    extra = [r for r in body if r.startswith(("news:", "⚠"))]
+    lines = [head] + [f"• {r}" for r in setup[:PUSH_REASON_LINES]]
+    lines += [f"• {_friendly(r)}" for r in extra]
+    lv = (row.get("levels") or {}).get(side)
+    if lv:
+        stop, tgt = lv
+        lines.append(f"Stop {_fmt_price(stop)} ({_pct(stop, row['price'])})"
+                     f"  ·  Target {_fmt_price(tgt)} "
+                     f"({_pct(tgt, row['price'])})")
+    return "\n".join(lines)
+
+
 def _playbook_tag(row: dict, side: str) -> str | None:
     if side == "BUY" and row.get("playbook"):
         return "dip buy" if row["playbook"] == "dip" else "momentum"
@@ -1340,6 +1386,8 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
 
     # Screen chunk-by-chunk (memory): bars are discarded after each chunk.
     fresh: list[dict] = []
+    screened = 0
+    push_ok: bool | None = None
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
         for sym in universe[ci:ci + 100]:
@@ -1348,6 +1396,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
+            screened += 1
             res = technical_screen(bars, volume_scale=volume_scale,
                                    spy_closes=spy)
             if res is None or not passes_liquidity(bars):
@@ -1391,15 +1440,15 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         sells = [r for r in fresh if r["side"] == "SELL"]
 
         def _line(r: dict) -> str:
-            reasons = _watch_reasons(r)
-            return (f"{r['side']}: {r['symbol']} @ {_fmt_price(r['price'])} — "
-                    f"{side_rating(r['score'], r['side'], r.get('sentiment', 0.0))} — "
-                    f"{'; '.join(reasons)}")
+            return push_block(r, r["side"], side_rating(
+                r["score"], r["side"], r.get("sentiment", 0.0)),
+                _watch_reasons(r))
 
         shown = fresh[:WATCH_PUSH_MAX]
         lines = [_line(r) for r in shown]
         if len(fresh) > WATCH_PUSH_MAX:
-            lines.append(f"…and {len(fresh) - WATCH_PUSH_MAX} more")
+            lines.append(f"…and {len(fresh) - WATCH_PUSH_MAX} more on the "
+                         f"dashboard")
 
         parts = []
         if buys:
@@ -1415,7 +1464,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                               f"{_fmt_price(sells[0]['price'])} — "
                               f"{side_rating(sells[0]['score'], 'SELL', sells[0].get('sentiment', 0.0))}")
         title = " · ".join(parts)
-        body = "\n".join(lines)
+        body = "\n\n".join(lines)
         if dry_run:
             # dry run: print only — never touch the seen-list, or the
             # real 15-minute watch would stay silent on these symbols
@@ -1430,6 +1479,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                                timeout=30)
             else:
                 ok = push_fn(title, body)
+            push_ok = bool(ok)
             log.info("watch: ntfy push %s (%d new: %d buy, %d sell)",
                      "sent" if ok else "FAILED",
                      len(fresh), len(buys), len(sells))
@@ -1444,7 +1494,23 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         log.info("watch: no new setups")
         if dry_run:
             print("(no new setups)")
+    if not dry_run:
+        _persist_watch_last(store, screened, len(fresh), push_ok)
     return fresh
+
+
+def _persist_watch_last(store: Store, screened: int, new: int,
+                        push_ok: bool | None) -> None:
+    """Heartbeat for the dashboard: when the 15-minute pass last ran, how
+    many stocks it screened and what it found — written on EVERY pass,
+    including the quiet ones that find nothing (those used to leave no
+    trace, so a quiet day looked the same as a stopped scanner)."""
+    try:
+        store.poller_set(SCAN_WATCH_LAST_KEY, json.dumps({
+            "ts": _et_now().isoformat(), "screened": screened, "new": new,
+            "push_ok": push_ok, "interval_min": WATCH_INTERVAL_MIN}))
+    except Exception as e:  # noqa: BLE001 - heartbeat is best-effort
+        log.warning("watch: could not record last-run time: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -1646,37 +1712,35 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
 
     # --- output ---------------------------------------------------------------
     def _buy_line(i: int, c: dict) -> str:
-        return (f"{i}. BUY: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{_morning_rating(c, 'BUY')} — "
-                f"{'; '.join(_candidate_reasons(c, 'BUY'))}")
+        return push_block(c, "BUY", _morning_rating(c, "BUY"),
+                          _candidate_reasons(c, "BUY"))
 
     def _sell_line(i: int, c: dict) -> str:
-        return (f"{i}. SELL: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{_morning_rating(c, 'SELL')} — "
-                f"{'; '.join(_candidate_reasons(c, 'SELL'))}")
+        return push_block(c, "SELL", _morning_rating(c, "SELL"),
+                          _candidate_reasons(c, "SELL"))
 
     sections: list[str] = []
     title_parts: list[str] = []
     if buys:
         title_parts.append(f"{len(buys)} buy candidate"
                            f"{'s' if len(buys) != 1 else ''}")
-        sections.append("BUY CANDIDATES\n"
-                        + "\n".join(_buy_line(i, c)
-                                    for i, c in enumerate(buys, 1)))
+        sections.append(f"BUY CANDIDATES ({len(buys)})\n\n"
+                        + "\n\n".join(_buy_line(i, c)
+                                      for i, c in enumerate(buys, 1)))
         for i, c in enumerate(buys, 1):
-            log.info("scan: %s", _buy_line(i, c))
+            log.info("scan: %s", _buy_line(i, c).replace("\n", " | "))
     if sells:
         title_parts.append(f"{len(sells)} sell candidate"
                            f"{'s' if len(sells) != 1 else ''}")
-        sections.append("SELL CANDIDATES\n"
-                        + "\n".join(_sell_line(i, c)
-                                    for i, c in enumerate(sells, 1)))
+        sections.append(f"SELL CANDIDATES ({len(sells)})\n\n"
+                        + "\n\n".join(_sell_line(i, c)
+                                      for i, c in enumerate(sells, 1)))
         for i, c in enumerate(sells, 1):
-            log.info("scan: %s", _sell_line(i, c))
+            log.info("scan: %s", _sell_line(i, c).replace("\n", " | "))
 
     if not dry_run and (buys or sells):
         title = "Morning scan: " + " + ".join(title_parts)
-        body = "\n\n".join(sections)
+        body = "\n\n\n".join(sections)
         if push_fn is None:
             ok = send_ntfy(settings.ntfy_server, settings.ntfy_topic,
                             title, body, priority=3,

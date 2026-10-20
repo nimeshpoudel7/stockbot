@@ -40,6 +40,13 @@
 .sent{font-size:.76rem;color:var(--amber-text);display:inline-flex;align-items:center;gap:5px}
 .sent::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .when{font-size:.78rem;color:var(--mute)}
+.live-status{display:flex;align-items:center;gap:10px;padding:10px 18px;border-top:1px solid var(--line-soft);font-size:.86rem;color:var(--ink-2);flex-wrap:wrap}
+.live-status .dot{width:8px;height:8px;border-radius:50%;background:var(--mute);flex:none}
+.live-status.ok .dot{background:var(--buy);box-shadow:0 0 0 3px var(--buy-bg)}
+.live-status.stale{background:var(--sell-bg);color:var(--ink)}
+.live-status.stale .dot{background:var(--sell)}
+.live-status b{font-weight:600;color:var(--ink)}
+@media (max-width:760px){.live-status{padding:10px 14px}}
 .list-foot{padding:12px 18px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 @media (max-width:760px){
   .picks-h{padding:16px 14px 12px}
@@ -148,6 +155,7 @@ details.more[open] summary{margin-bottom:14px}
           <button type="button" data-pick="live" aria-pressed="false">Live today <span class="count" id="cLive"></span></button>
         </div>
       </div>
+      <div class="live-status" id="liveStatus" hidden></div>
       <ul class="pick-list" id="pickList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
       <div class="list-foot" id="pickFoot" hidden></div>
     </div>
@@ -293,6 +301,45 @@ async function loadRegime() {
 
 // ------------------------------------------------------------------ picks
 let SCAN = {morning: null, watch: null}, pickTab = 'buys', showAll = false;
+// Is the US market open right now (Mon-Fri 9:30-16:00 ET)? Holidays are not
+// known here; the scanner itself skips them.
+function marketOpenNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short',
+    hour: 'numeric', minute: 'numeric', hour12: false}).formatToParts(new Date()).map(x => [x.type, x.value]));
+  if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
+  const m = (+p.hour % 24) * 60 + (+p.minute);
+  return m >= 570 && m < 960;
+}
+function renderLiveStatus() {
+  const box = $('liveStatus');
+  box.hidden = pickTab !== 'live';
+  if (box.hidden) return;
+  const L = SCAN.watch_last, open = marketOpenNow();
+  const every = (L && L.interval_min) || 15;
+  let cls = '', html;
+  if (L && L.ts) {
+    const age = (Date.now() - new Date(L.ts).getTime()) / 60000;
+    const at = etTime(L.ts, {hour: 'numeric', minute: '2-digit'});
+    const found = L.new ? `${L.new} new setup${L.new === 1 ? '' : 's'}` : 'nothing new';
+    const today = etTime(L.ts, {year: 'numeric', month: '2-digit', day: '2-digit'}) === etTime(new Date().toISOString(), {year: 'numeric', month: '2-digit', day: '2-digit'});
+    const last = `Last checked <b>${today ? at + ' ET' : etTime(L.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'}) + ' ET'}</b>, ${(L.screened || 0).toLocaleString('en-US')} stocks, ${found}${L.push_ok === false ? ' (push to phone failed, will retry)' : ''}.`;
+    if (open && age > every * 2 + 5) {
+      cls = 'stale';
+      html = `${last} No check for ${Math.round(age)} min, so the 15-minute scan may have stopped. Check <code>logs/cron.log</code> on the server.`;
+    } else if (open) {
+      cls = 'ok';
+      const next = new Date(new Date(L.ts).getTime() + every * 60000);
+      html = `${last} Next check about ${etTime(next.toISOString(), {hour: 'numeric', minute: '2-digit'})} ET.`;
+    } else {
+      html = `${last} Market closed. Checks run every ${every} minutes from 9:30 AM to 4:00 PM ET.`;
+    }
+  } else {
+    html = open ? 'The 15-minute scan has not reported in yet. The first check runs within 15 minutes of the open.'
+                : `Market closed. Checks run every ${every} minutes from 9:30 AM to 4:00 PM ET.`;
+  }
+  box.className = 'live-status ' + cls;
+  box.innerHTML = `<span class="dot" aria-hidden="true"></span><span>${html}</span>`;
+}
 function pickRow(c, side, live) {
   const chips = cleanReasons(c.reasons).slice(0, 4).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
   const sent = c.top_pick ? '<span class="sent">Sent to phone</span>' : '';
@@ -320,7 +367,7 @@ function renderPicks() {
   let list, side, isLive = false, emptyT, emptyS;
   if (pickTab === 'live') {
     list = live.slice().reverse(); isLive = true;
-    emptyT = 'No new setups yet today'; emptyS = 'The scanner checks the whole market every 15 minutes while it is open and lists new matches here.';
+    emptyT = 'No new setups yet today'; emptyS = 'New matches from the 15-minute checks show up here with the time they were found.';
   } else {
     side = pickTab === 'buys' ? 'BUY' : 'SELL';
     const all = pickTab === 'buys' ? buys : sells;
@@ -338,6 +385,7 @@ function renderPicks() {
     } else foot.hidden = true;
   }
   if (isLive) $('pickFoot').hidden = true;
+  renderLiveStatus();
   const shown = list.slice(0, 120);
   $('pickList').innerHTML = shown.length
     ? shown.map(c => pickRow(c, isLive ? c.side : side, isLive)).join('')

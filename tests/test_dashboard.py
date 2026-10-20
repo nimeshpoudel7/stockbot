@@ -55,12 +55,14 @@ class TestApiScanner(unittest.TestCase):
         store.poller_set("scanner_morning", json.dumps(morning))
         store.poller_set("scanner_watch", json.dumps(watch))
         out = _scanner_endpoint(self._app(store))()
-        self.assertEqual(out, {"morning": morning, "watch": watch})
+        self.assertEqual(out, {"morning": morning, "watch": watch,
+                               "watch_last": None})
 
     def test_null_when_nothing_stored(self):
         store = Store(":memory:")
         out = _scanner_endpoint(self._app(store))()
-        self.assertEqual(out, {"morning": None, "watch": None})
+        self.assertEqual(out, {"morning": None, "watch": None,
+                               "watch_last": None})
 
     def test_bad_json_yields_null(self):
         store = Store(":memory:")

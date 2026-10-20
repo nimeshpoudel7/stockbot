@@ -173,7 +173,7 @@ Pipeline: trading-day guard (skips holidays/weekends quietly) → universe
 fetch fails) → **liquidity filter** → technical screen on 300 daily bars per
 symbol (Alpaca REST, 100 symbols per call) → fundamental overlay
 (Piotroski/Altman/DCF via the 24h cache) on the top 25 scorers per side →
-ranked top 12 buys and top 12 sells pushed as one ntfy message with
+ranked top 6 buys and top 6 sells pushed as one readable ntfy message with
 **BUY CANDIDATES** and **SELL CANDIDATES** sections.
 
 **Liquidity filter** (no price floor): a symbol must average **>$250k/day in

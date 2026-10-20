@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import indicators as ind
 from alerts import BAR_TYPES, EVENT_TYPES, TICK_TYPES, describe
-from scanner import SCAN_MORNING_KEY, SCAN_WATCH_KEY
+from scanner import SCAN_MORNING_KEY, SCAN_WATCH_KEY, SCAN_WATCH_LAST_KEY
 
 import fundamentals
 import scanner as scanner_mod
@@ -400,7 +400,8 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 return None
 
         return {"morning": _poller(SCAN_MORNING_KEY),
-                "watch": _poller(SCAN_WATCH_KEY)}
+                "watch": _poller(SCAN_WATCH_KEY),
+                "watch_last": _poller(SCAN_WATCH_LAST_KEY)}
 
     # ---- stock detail ----------------------------------------------------
     PROFILE_TTL_SECS = 24 * 3600   # company profile: one Finnhub call/day
