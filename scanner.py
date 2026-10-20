@@ -60,8 +60,9 @@ Pipeline
 
 Watch mode (`python -m scanner --watch`, every 15 min during market hours):
 technical screen only (no fundamentals), pushes immediately when a symbol
-NEWLY matches (its side's score clears that side's bar — 30% of its tech
-scale: buy 8, sell 30 raw). Dedupe: flagged symbols persist in SQLite per
+NEWLY matches (its side's score clears that side's bar — explicit raw
+values: buy 20, sell 30; see the push-bars note in the regime section
+below). Dedupe: flagged symbols persist in SQLite per
 trading day — one alert per symbol PER SIDE per day ("SYM|SIDE" entries;
 a BUY alert does not mute a later SELL flip, and legacy plain "SYM"
 entries mute both sides); the morning scan resets the seen-list.
@@ -96,14 +97,27 @@ Friday scan flags Monday earnings.) Data: Finnhub /calendar/earnings,
 cached per symbol for 24h in poller_state (key earnings_<SYM>); any
 failure (no key, API error) means no flag, never a broken scan.
 
+Push bars are EXPLICIT raw values, calibrated to setup combinations
+(morning on the composite, watch on the tech score): morning buy 20 /
+sell 50, watch buy 20 / sell 30. Buy bar 20 = uptrend (11) +
+breakout_watch (9), or two setups plus fundamental help — a single
+setup never pushes. The bars used to be fractions of each side's scale
+(40% morning / 30% watch), but that quantized badly on the coarse bull
+scale (only three scored setups, max 28): the morning buy bar landed
+at 21 — secretly all three setups, since 11 + 9 = 20 < 21 — and the
+watch buy bar landed at 8, BELOW the single uptrend weight, so the
+first live watch pass on Oct 20 matched 2,002 buy names and hammered
+Finnhub into 429s. Fractions were dropped for bars; classify_side
+still compares score fractions across the two scales, which is where
+normalization actually matters.
+
 Regime gate (push only): when the market regime (regime.py, SPY vs
 SMA200) fights a side — bear regime for buys, bull regime for sells,
-sideways for BOTH — that side's push bar rises by 15% OF ITS SCALE
-(morning bar = 40% of scale, gated 55%; watch bar = 30%, gated 45%).
-Effective raw bars: morning buy 21 -> 29, sell 52 -> 72; watch buy
-8 -> 13, sell 30 -> 45. The full dashboard lists are never gated:
-every setup persists with its true score/rating. Unknown regime → no
-gating (fail open).
+sideways for BOTH — that side's push bar rises by raw points (buy +5,
+sell +15, same for morning and watch). Effective bars: morning buy
+20 -> 25, sell 50 -> 65; watch buy 20 -> 25, sell 30 -> 45. The full
+dashboard lists are never gated: every setup persists with its true
+score/rating. Unknown regime → no gating (fail open).
 
 Parity with the 39-symbol alert engine: the scanner runs the SAME indicator
 math (RSI, Bollinger, SMA crosses, 52-week extremes, volume spikes, ATR)
@@ -196,28 +210,38 @@ SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboa
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
 WATCH_PUSH_MAX = 15        # cap symbols listed in one watch push
 
-# --- Scale-normalized push bars (the scale-bug fix) -------------------------
-# The two sides live on different point scales: bull setups sum to at most
-# 28, bear setups to 100. Raw-point bars were never comparable (one raw
-# number is a different fraction of each side's scale) and classify_side
-# compared raw sums head-to-head, tilting borderline names toward SELL.
-# Bars are therefore FRACTIONS of each side's own scale:
-#   morning: MORNING_BAR_FRACTION of (tech max + fundamental bonus max)
-#   watch:   WATCH_BAR_FRACTION of tech max (no fundamental overlay)
-# and the regime gate adds REGIME_GATE_BONUS (a fraction of the scale).
-# Effective raw bars with today's weights —
-#   morning scale: buy 28+25 = 53, sell 100+30 = 130
-#     buy 21 (gated 29) · sell 52 (gated 72)
-#   watch scale: buy 28, sell 100
-#     buy 8 (gated 13) · sell 30 (gated 45)
+# --- Push bars: explicit raw values (calibrated to setup combinations) -----
+# classify_side still compares each side's score AS A FRACTION of its own
+# scale (bull max 28 vs bear max 100) — normalization matters for that
+# cross-scale comparison, and it stays. The push BARS, however, are raw
+# points. They used to be fractions of each side's scale (morning 40%,
+# watch 30%, regime gate +15%), but fractions quantize badly on the
+# coarse bull scale, which has only three scored setups (uptrend 11,
+# breakout_watch 9, volume_spike 8; goldens/bounces/squeezes score 0):
+#   * morning 40% x (28 tech + 25 bonus) = 21 secretly required ALL THREE
+#     setups — uptrend + breakout alone is 11 + 9 = 20 < 21
+#   * watch 30% x 28 = 8 sat BELOW the single uptrend weight, so the
+#     first live watch pass (Oct 20) matched 2,002 buy names and drove
+#     Finnhub sentiment calls into 429s
+# Raw calibration (morning is on the composite, watch on tech alone):
+#   morning buy 20 = uptrend + breakout, or two setups + fundamental help
+#   morning sell 50 ~ three stacked bear setups
+#   watch buy 20 / sell 30 — same idea without the fundamental overlay
+# The regime gate adds RAW points to the fighting side's bar (sideways
+# gates both): buy +5, sell +15, morning and watch alike — so the gated
+# bars are morning 25/65 and watch 25/45.
 BULL_TECH_MAX = sum(WEIGHTS.values())        # 28 — derived, never hardcoded
 BEAR_TECH_MAX = sum(BEAR_WEIGHTS.values())   # 100 — derived, never hardcoded
+# Informational ceilings only (the scale the old fraction bars used);
+# bars no longer derive from these.
 FUND_BONUS_MAX = 25    # fundamental_bonus ceiling: Piotroski +10, Altman +5, DCF +10
 SHORT_BONUS_MAX = 30   # short_bonus ceiling: Piotroski +10, Altman +10, DCF +10
-MORNING_BAR_FRACTION = 0.40
-WATCH_BAR_FRACTION = 0.30
-REGIME_GATE_BONUS = 0.15   # fraction of the side's scale added to its push
-                           # bar when the regime fights it (sideways: both)
+MORNING_BUY_BAR = 20    # composite: uptrend + breakout, or 2 setups + funds
+MORNING_SELL_BAR = 50   # composite: ~three stacked bear setups
+WATCH_BUY_BAR = 20      # tech only (watch runs no fundamental overlay)
+WATCH_SELL_BAR = 30     # tech only
+GATE_BUY_BONUS = 5      # raw points added to a regime-fighting buy bar
+GATE_SELL_BONUS = 15    # raw points added to a regime-fighting sell bar
 PUSH_MIN_PRICE = 3.0       # pushes require price >= $3.00; the persisted
                            # dashboard lists are NOT price-filtered
 BARS_BATCH_SIZE = 100      # symbols per Alpaca multi-bars call
@@ -969,27 +993,25 @@ def _regime_fights(side: str, regime: str | None) -> bool:
 
 
 def _morning_bar(side: str, regime: str | None) -> int:
-    """Effective raw morning-push bar for a side: MORNING_BAR_FRACTION of
-    the side's scale (tech max + fundamental bonus max), plus
-    REGIME_GATE_BONUS of the scale when the regime fights the side.
-    Effective today: buy 21 (gated 29), sell 52 (gated 72)."""
-    scale = ((BULL_TECH_MAX + FUND_BONUS_MAX) if side == "BUY"
-             else (BEAR_TECH_MAX + SHORT_BONUS_MAX))
-    frac = MORNING_BAR_FRACTION
+    """Effective raw morning-push bar for a side (on the composite):
+    MORNING_BUY_BAR / MORNING_SELL_BAR, plus the raw regime-gate bonus
+    when the regime fights the side. Effective today: buy 20 (gated 25),
+    sell 50 (gated 65)."""
+    bar = MORNING_BUY_BAR if side == "BUY" else MORNING_SELL_BAR
     if _regime_fights(side, regime):
-        frac += REGIME_GATE_BONUS
-    return round(frac * scale)
+        bar += GATE_BUY_BONUS if side == "BUY" else GATE_SELL_BONUS
+    return bar
 
 
 def _watch_bar(side: str, regime: str | None) -> int:
-    """Effective raw watch-push bar for a side: WATCH_BAR_FRACTION of the
-    side's TECH max (watch runs no fundamental overlay), gated like the
-    morning bar. Effective today: buy 8 (gated 13), sell 30 (gated 45)."""
-    scale = BULL_TECH_MAX if side == "BUY" else BEAR_TECH_MAX
-    frac = WATCH_BAR_FRACTION
+    """Effective raw watch-push bar for a side (tech score only — watch
+    runs no fundamental overlay), gated like the morning bar with the
+    same raw bonuses. Effective today: buy 20 (gated 25), sell 30
+    (gated 45)."""
+    bar = WATCH_BUY_BAR if side == "BUY" else WATCH_SELL_BAR
     if _regime_fights(side, regime):
-        frac += REGIME_GATE_BONUS
-    return round(frac * scale)
+        bar += GATE_BUY_BONUS if side == "BUY" else GATE_SELL_BONUS
+    return bar
 
 
 # ---------------------------------------------------------------------------
@@ -1162,7 +1184,8 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
 
     # Regime gate (push only): in a bear regime a new BUY match must clear
     # a higher bar, and vice versa in a bull regime; sideways raises both.
-    # Fail open on unknown. Bars are fractions of each side's tech scale.
+    # Fail open on unknown. Bars are explicit raw values (see the
+    # calibration note at the bar constants).
     regime = _current_regime(store, rest)
     buy_bar = _watch_bar("BUY", regime)
     sell_bar = _watch_bar("SELL", regime)
@@ -1429,7 +1452,8 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     # higher bar to reach the phone. bull_rows/bear_rows themselves (and
     # therefore the persisted dashboard lists) are NOT gated — they keep
     # every setup at its true score. Fail open when the regime is unknown.
-    # Bars are fractions of each side's scale (tech max + bonus max).
+    # Bars are explicit raw values (see the calibration note at the bar
+    # constants).
     regime = _current_regime(store, rest)
     buy_bar = _morning_bar("BUY", regime)
     sell_bar = _morning_bar("SELL", regime)

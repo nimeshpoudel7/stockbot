@@ -809,14 +809,17 @@ class TestRating(unittest.TestCase):
         self.assertEqual(scanner._rating(-10), "0.0/10")
 
     def test_internal_scores_unchanged(self):
-        # display-only: stored scores stay raw points; thresholds are
-        # fractions of each side's scale (effective raw bars pinned here)
-        self.assertEqual(scanner.MORNING_BAR_FRACTION, 0.40)
-        self.assertEqual(scanner.WATCH_BAR_FRACTION, 0.30)
-        self.assertEqual(scanner.REGIME_GATE_BONUS, 0.15)
-        self.assertEqual(scanner._morning_bar("BUY", None), 21)
-        self.assertEqual(scanner._morning_bar("SELL", None), 52)
-        self.assertEqual(scanner._watch_bar("BUY", None), 8)
+        # display-only: stored scores stay raw points; push bars are
+        # explicit raw values (effective bars pinned here)
+        self.assertEqual(scanner.MORNING_BUY_BAR, 20)
+        self.assertEqual(scanner.MORNING_SELL_BAR, 50)
+        self.assertEqual(scanner.WATCH_BUY_BAR, 20)
+        self.assertEqual(scanner.WATCH_SELL_BAR, 30)
+        self.assertEqual(scanner.GATE_BUY_BONUS, 5)
+        self.assertEqual(scanner.GATE_SELL_BONUS, 15)
+        self.assertEqual(scanner._morning_bar("BUY", None), 20)
+        self.assertEqual(scanner._morning_bar("SELL", None), 50)
+        self.assertEqual(scanner._watch_bar("BUY", None), 20)
         self.assertEqual(scanner._watch_bar("SELL", None), 30)
 
 
@@ -1221,29 +1224,29 @@ class TestEarningsFlag(unittest.TestCase):
 
 
 class TestRegimeGate(unittest.TestCase):
-    """Regime gate: the regime-fighting side's push bar rises by 15% OF
-    ITS SCALE (fraction points); sideways fights both sides. The
+    """Regime gate: the regime-fighting side's push bar rises by raw
+    points (buy +5, sell +15); sideways fights both sides. The
     persisted dashboard lists are never gated."""
 
     def test_gate_math(self):
         mb, wb = scanner._morning_bar, scanner._watch_bar
-        # morning: 40% of (tech max + bonus max); gated +15% of scale
-        self.assertEqual(mb("BUY", None), 21)    # .40 x 53
-        self.assertEqual(mb("SELL", None), 52)   # .40 x 130
-        self.assertEqual(mb("BUY", "bear"), 29)   # .55 x 53
-        self.assertEqual(mb("SELL", "bull"), 72)  # .55 x 130
+        # morning: explicit bars on the composite; gate adds raw points
+        self.assertEqual(mb("BUY", None), 20)
+        self.assertEqual(mb("SELL", None), 50)
+        self.assertEqual(mb("BUY", "bear"), 25)   # 20 + 5
+        self.assertEqual(mb("SELL", "bull"), 65)  # 50 + 15
         # the non-fighting side keeps the base bar
-        self.assertEqual(mb("BUY", "bull"), 21)
-        self.assertEqual(mb("SELL", "bear"), 52)
+        self.assertEqual(mb("BUY", "bull"), 20)
+        self.assertEqual(mb("SELL", "bear"), 50)
         # sideways fights both sides
-        self.assertEqual(mb("BUY", "sideways"), 29)
-        self.assertEqual(mb("SELL", "sideways"), 72)
-        # watch: 30% of tech max; gated 45%
-        self.assertEqual(wb("BUY", None), 8)
+        self.assertEqual(mb("BUY", "sideways"), 25)
+        self.assertEqual(mb("SELL", "sideways"), 65)
+        # watch: explicit bars on the tech score; same gate bonuses
+        self.assertEqual(wb("BUY", None), 20)
         self.assertEqual(wb("SELL", None), 30)
-        self.assertEqual(wb("BUY", "bear"), 13)
+        self.assertEqual(wb("BUY", "bear"), 25)
         self.assertEqual(wb("SELL", "bull"), 45)
-        self.assertEqual(wb("BUY", "sideways"), 13)
+        self.assertEqual(wb("BUY", "sideways"), 25)
         self.assertEqual(wb("SELL", "sideways"), 45)
         # unknown regime fights nothing
         self.assertFalse(scanner._regime_fights("BUY", None))
@@ -1265,13 +1268,13 @@ class TestRegimeGate(unittest.TestCase):
 
     @staticmethod
     def _fake_screen(bars):
-        # direction from mean close; bull composite 25 straddles the
-        # ungated (21) / gated (29) buy bars, bear composite 55 the
-        # sell bars (52 / 72). Bonus overlays are patched to 0.
+        # direction from mean close; bull composite 22 straddles the
+        # ungated (20) / gated (25) buy bars, bear composite 55 the
+        # sell bars (50 / 65). Bonus overlays are patched to 0.
         c = [b["c"] for b in bars]
         if sum(c) / len(c) >= 120.0:
-            return {"price": 160.0, "tech_score": 25,
-                    "setups": [("fake", 25, "fake setup")],
+            return {"price": 160.0, "tech_score": 22,
+                    "setups": [("fake", 22, "fake setup")],
                     "bear_score": 0, "bear_setups": [], "indicators": {}}
         return {"price": 60.0, "tech_score": 0, "setups": [],
                 "bear_score": 55,
@@ -1302,21 +1305,21 @@ class TestRegimeGate(unittest.TestCase):
 
     def test_bull_regime_gates_sells_only(self):
         store, out, push = self._run([200.0] * 199 + [260.0] * 51)
-        self.assertEqual(len(out["buys"]), 1)    # buy bar stays 21
-        self.assertEqual(len(out["sells"]), 0)   # sell bar 72 > 55
+        self.assertEqual(len(out["buys"]), 1)    # buy bar stays 20
+        self.assertEqual(len(out["sells"]), 0)   # gated sell bar 65 > 55
         push.assert_called_once()
 
     def test_bear_regime_gates_buys_only(self):
         store, out, push = self._run([200.0] * 199 + [140.0] * 51)
-        self.assertEqual(len(out["buys"]), 0)    # buy bar 29 > 25
-        self.assertEqual(len(out["sells"]), 1)   # sell bar stays 52
+        self.assertEqual(len(out["buys"]), 0)    # gated buy bar 25 > 22
+        self.assertEqual(len(out["sells"]), 1)   # sell bar stays 50
         push.assert_called_once()
 
     def test_sideways_regime_gates_both_sides(self):
         import json
         store, out, push = self._run([200.0] * 250)
-        self.assertEqual(len(out["buys"]), 0)    # 25 < gated 29
-        self.assertEqual(len(out["sells"]), 0)   # 55 < gated 72
+        self.assertEqual(len(out["buys"]), 0)    # 22 < gated 25
+        self.assertEqual(len(out["sells"]), 0)   # 55 < gated 65
         push.assert_not_called()
         # ...but the lists still persist every setup
         rows = json.loads(store.poller_get(scanner.SCAN_MORNING_KEY))
@@ -1343,13 +1346,13 @@ class TestRegimeGate(unittest.TestCase):
     def test_gate_raise_is_logged(self):
         with self.assertLogs("stockbot.scanner", level="INFO") as cm:
             self._run([200.0] * 199 + [260.0] * 51)
-        self.assertTrue(any("sell push bar raised to 72" in m
+        self.assertTrue(any("sell push bar raised to 65" in m
                             for m in cm.output), cm.output)
         with self.assertLogs("stockbot.scanner", level="INFO") as cm:
             self._run([200.0] * 250)
-        self.assertTrue(any("buy push bar raised to 29" in m
+        self.assertTrue(any("buy push bar raised to 25" in m
                             for m in cm.output), cm.output)
-        self.assertTrue(any("sell push bar raised to 72" in m
+        self.assertTrue(any("sell push bar raised to 65" in m
                             for m in cm.output), cm.output)
 
     # --- watch mode -----------------------------------------------------
@@ -1388,7 +1391,7 @@ class TestRegimeGate(unittest.TestCase):
                     "bear_score": 0, "bear_setups": [], "indicators": {}}
         out, push = self._watch([200.0] * 199 + [140.0] * 51,
                                 screen=screen10)  # bear regime
-        self.assertEqual(out, [])   # 10 < gated buy bar 13
+        self.assertEqual(out, [])   # 10 < gated buy bar 25
         push.assert_not_called()
 
     def test_watch_sell_passes_gate(self):
@@ -1405,13 +1408,13 @@ class TestRegimeGate(unittest.TestCase):
 
     def test_watch_strong_scores_clear_gated_bars(self):
         out, push = self._watch([200.0] * 250)  # sideways, both gated
-        # watch bars are low: bull 35 >= 13 and bear 55 >= 45 even gated
+        # watch bars: bull 35 >= gated 25 and bear 55 >= gated 45
         self.assertEqual(len(out), 2)
 
     def test_watch_gate_logged(self):
         with self.assertLogs("stockbot.scanner", level="INFO") as cm:
             self._watch([200.0] * 199 + [140.0] * 51)  # bear regime
-        self.assertTrue(any("buy push bar raised to 13" in m
+        self.assertTrue(any("buy push bar raised to 25" in m
                             for m in cm.output), cm.output)
 
 
@@ -1419,10 +1422,12 @@ class TestPushPriceFloor(unittest.TestCase):
     """Fix 4: pushes (morning + watch) require price >= PUSH_MIN_PRICE;
     the persisted dashboard lists keep every setup at its true score."""
 
-    def test_fraction_and_floor_constants(self):
+    def test_bar_and_floor_constants(self):
         self.assertEqual(scanner.PUSH_MIN_PRICE, 3.0)
-        self.assertEqual(scanner.MORNING_BAR_FRACTION, 0.40)
-        self.assertEqual(scanner.WATCH_BAR_FRACTION, 0.30)
+        self.assertEqual(scanner.MORNING_BUY_BAR, 20)
+        self.assertEqual(scanner.MORNING_SELL_BAR, 50)
+        self.assertEqual(scanner.WATCH_BUY_BAR, 20)
+        self.assertEqual(scanner.WATCH_SELL_BAR, 30)
 
     class _Rest:
         def daily_bars_multi(self, symbols, days=300):
@@ -1455,7 +1460,7 @@ class TestPushPriceFloor(unittest.TestCase):
                 _patch_sentiment():
             out = scanner.run_scan(store=store, rest=self._Rest(),
                                    dry_run=False, push_fn=push)
-        # composite 45 clears the 21 buy bar but $2.50 < $3.00 floor
+        # composite 45 clears the 20 buy bar but $2.50 < $3.00 floor
         self.assertEqual(out["buys"], [])
         push.assert_not_called()
         rows = json.loads(store.poller_get(scanner.SCAN_MORNING_KEY))
@@ -1483,6 +1488,77 @@ class TestPushPriceFloor(unittest.TestCase):
         raw = store.poller_get(scanner.WATCH_SEEN_KEY)
         seen = json.loads(raw) if raw else {"symbols": []}
         self.assertEqual(seen["symbols"], [])  # not marked seen either
+
+
+class TestBarCalibration(unittest.TestCase):
+    """Regression for the Oct 20 fraction-bar flood: the old watch buy
+    bar was 30% x 28 = 8, BELOW the single uptrend weight (11), so the
+    first live watch pass matched 2,002 buy names. Bars are now
+    explicit raw values calibrated to setup combinations — a lone
+    uptrend must never push, on either path."""
+
+    _UPTREND_ONLY = {"price": 50.0, "tech_score": 11,
+                     "setups": [("uptrend", 11, "in uptrend")],
+                     "bear_score": 0, "bear_setups": [], "indicators": {}}
+    _UPTREND_BREAKOUT = {"price": 50.0, "tech_score": 20,
+                         "setups": [("uptrend", 11, "in uptrend"),
+                                    ("breakout_watch", 9, "near 52w high")],
+                         "bear_score": 0, "bear_setups": [],
+                         "indicators": {}}
+
+    class _Rest:
+        def daily_bars_multi(self, symbols, days=300):
+            if "SPY" in symbols:
+                return {}
+            return {"TESTA": make_bars([100.0] * 250)}
+
+    def _watch(self, screen_result):
+        store = Store(":memory:")
+        push = MagicMock(return_value=True)
+        with patch.object(scanner, "_in_market_hours", return_value=True), \
+             patch.object(scanner, "get_universe", return_value=["TESTA"]), \
+             patch.object(scanner, "_current_regime", return_value=None), \
+             patch.object(scanner, "technical_screen",
+                          return_value=dict(screen_result)), \
+             patch.object(scanner, "passes_liquidity", return_value=True), \
+             _patch_sentiment():
+            out = scanner.watch_scan(store=store, rest=self._Rest(),
+                                     dry_run=False, push_fn=push)
+        return out, push
+
+    def test_lone_uptrend_no_watch_match(self):
+        out, push = self._watch(self._UPTREND_ONLY)
+        self.assertEqual(out, [])          # 11 < WATCH_BUY_BAR 20
+        push.assert_not_called()
+
+    def test_uptrend_plus_breakout_matches_watch(self):
+        out, push = self._watch(self._UPTREND_BREAKOUT)
+        self.assertEqual(len(out), 1)      # 20 clears WATCH_BUY_BAR 20
+        self.assertEqual(out[0]["symbol"], "TESTA")
+        self.assertEqual(out[0]["side"], "BUY")
+        push.assert_called_once()
+
+    def test_lone_uptrend_plus_small_bonus_no_morning_push(self):
+        # composite 11 + 5 = 16 < MORNING_BUY_BAR 20: even with
+        # fundamental help, a single setup stays off the phone
+        store = Store(":memory:")
+        push = MagicMock(return_value=True)
+        with patch.object(sessions_mod, "is_trading_day",
+                          return_value=True), \
+             patch.object(scanner, "get_universe", return_value=["TESTA"]), \
+             patch.object(scanner, "_current_regime", return_value=None), \
+             patch.object(scanner, "technical_screen",
+                          return_value=dict(self._UPTREND_ONLY)), \
+             patch.object(scanner, "passes_liquidity", return_value=True), \
+             patch.object(scanner, "fundamental_bonus",
+                          return_value=(5, ["funds ok"])), \
+             patch.object(scanner, "short_bonus", return_value=(0, [])), \
+             patch.object(scanner.time, "sleep", lambda *_: None), \
+             _patch_sentiment():
+            out = scanner.run_scan(store=store, rest=self._Rest(),
+                                   dry_run=False, push_fn=push)
+        self.assertEqual(out["buys"], [])
+        push.assert_not_called()
 
 
 class TestWatchVolumeScaling(unittest.TestCase):
