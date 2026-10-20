@@ -78,6 +78,10 @@
 .heat.active{color:var(--ink-2);border:1px solid var(--line-soft)}
 .heat .sc{font-variant-numeric:tabular-nums;font-weight:500;color:var(--mute)}
 .chip.find{border-style:dashed}
+.chip.part b{font-weight:600;margin-left:4px}
+.is-near .pick{opacity:.78}
+.near-h{background:transparent}
+.chip.part.pos b{color:var(--buy)}.chip.part.neg b{color:var(--sell)}
 .trend-note{font-size:.84rem;color:var(--ink-2);padding:12px 18px;border-top:1px solid var(--line-soft);background:var(--panel-2)}
 .trend-note p{margin:0;max-width:80ch}.trend-note p + p{margin-top:8px}.trend-note b{color:var(--ink);font-weight:600}
 
@@ -182,7 +186,7 @@ details.more[open] summary{margin-bottom:14px}
           <button type="button" data-pick="buys" aria-pressed="true">Buy <span class="count" id="cBuys"></span></button>
           <button type="button" data-pick="sells" aria-pressed="false">Sell <span class="count" id="cSells"></span></button>
           <button type="button" data-pick="live" aria-pressed="false">Live today <span class="count" id="cLive"></span></button>
-          <button type="button" data-pick="trend" aria-pressed="false">Trending <span class="count" id="cTrend"></span></button>
+          <button type="button" data-pick="trend" aria-pressed="false">Top 10 now <span class="count" id="cTrend"></span></button>
         </div>
       </div>
       <div class="pick-tools" id="pickTools">
@@ -200,8 +204,8 @@ details.more[open] summary{margin-bottom:14px}
         </select></label>
         <label class="sel" id="fSideWrap"><span>Side</span><select id="fSide">
           <option value="">All</option><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
-        <label class="sel" id="fDirWrap" hidden><span>Direction</span><select id="fDir">
-          <option value="up">Moving up</option><option value="down">Moving down</option></select></label>
+        <label class="sel" id="fDirWrap" hidden><span>List</span><select id="fDir">
+          <option value="up">Top 10 BUY</option><option value="down">Top 10 SELL</option></select></label>
         <label class="sel" id="fSetupWrap"><span>Setup</span><select id="fSetup">
           <option value="">Any</option><option value="dip">Dip buy</option><option value="momentum">Momentum</option></select></label>
         <label class="sel"><span>Price</span><select id="fPrice">
@@ -356,7 +360,7 @@ async function loadRegime() {
 }
 
 // ------------------------------------------------------------------ picks
-let SCAN = {morning: null, watch: null, trending: null}, pickTab = 'buys', showAll = false;
+let SCAN = {morning: null, watch: null, top10: null}, pickTab = 'buys', showAll = false;
 function renderLiveStatus() {
   const box = $('liveStatus');
   box.hidden = pickTab !== 'live' && pickTab !== 'trend';
@@ -422,9 +426,9 @@ const scoreOf = c => { const v = parseFloat(c.rating); return isNaN(v) ? (c.scor
 const dayPctOf = c => { const q = LIVEP[c.symbol]; return q && q.day_pct != null ? q.day_pct : (c.pct != null ? c.pct : null); };
 const sinceOf = c => { const q = LIVEP[c.symbol]; return q && q.price != null && c.price ? (q.price - c.price) / c.price * 100 * (c.side === 'SELL' || c.dir === 'down' ? -1 : 1) : null; };
 function baseRows() {
-  const m = SCAN.morning, w = SCAN.watch, t = SCAN.trending;
+  const m = SCAN.morning, w = SCAN.watch, t = SCAN.top10;
   if (pickTab === 'live') return ((w && w.entries) || []).map((c, i) => Object.assign({_i: i}, c));
-  if (pickTab === 'trend') return (t && t[PREFS.dir === 'down' ? 'down' : 'up']) || [];
+  if (pickTab === 'trend') { const k = PREFS.dir === 'down' ? 'SELL' : 'BUY'; return t ? (t[k] || []).concat((t[k + '_near'] || []).map(c => Object.assign({near: true}, c))) : []; }
   const all = pickTab === 'buys' ? ((m && m.buys) || []) : ((m && m.sells) || []);
   const top = all.filter(c => c.top_pick);
   const side = pickTab === 'buys' ? 'BUY' : 'SELL';
@@ -457,7 +461,7 @@ function currentRows() {
     price_d: (a, b) => b.price - a.price, price_a: (a, b) => a.price - b.price,
     sym: (a, b) => a.symbol.localeCompare(b.symbol),
   }[PREFS.sort] || ((a, b) => scoreOf(b) - scoreOf(a));
-  rows = rows.slice().sort(by);
+  rows = rows.slice().sort((a, b) => (a.near ? 1 : 0) - (b.near ? 1 : 0) || by(a, b));
   ROWS_BY_SYM = Object.fromEntries(rows.map(c => [c.symbol, c]));
   return rows;
 }
@@ -488,42 +492,44 @@ function pickRow(c, side, live) {
     <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
   </a></li>`;
 }
-function trendRow(c) {
-  const up = c.dir === 'up';
-  const why = (c.why || []).slice(0, 4).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
-  const finds = (c.findings || []).slice(0, 3).map(f => `<span class="chip find" title="From the chart read">${esc(f.name)}: ${esc(f.status)}</span>`).join('');
-  const cls = c.rating === 'Hot' ? 'hot' : c.rating === 'Strong' ? 'strong' : 'active';
-  return `<li><a class="pick" href="${stockUrl(c.symbol)}">
+function trendRow(c, prev) {
+  const buy = c.side === 'BUY';
+  const M = SCAN.top10 && SCAN.top10.model && SCAN.top10.model[c.side];
+  const divider = c.near && (!prev || !prev.near)
+    ? `<li class="trend-note near-h"><p><b>Below the tested bar</b> — the next best by score, to fill the top 10. Weaker odds${M && M.test_nobar && M.test_nobar.n ? ` (the full top 10 tested ${M.test_nobar.hit.toFixed(0)}% right at 5 days)` : ''}.</p></li>` : '';
+  const parts = (c.parts || []).map(p => `<span class="chip part ${p.pts >= 0 ? 'pos' : 'neg'}" title="${esc(p.label)}">${esc(p.label)} <b>${p.pts >= 0 ? '+' : '−'}${Math.abs(p.pts).toFixed(0)}</b></span>`).join('');
+  const why = (c.setups || []).slice(0, 3).map(r => `<span class="chip" title="${esc(r)}">${esc(r)}</span>`).join('');
+  const news = c.news && c.news.n ? `<span class="when">News ${esc(c.news.label || '')}</span>` : '';
+  const chart = c.chart ? `<span class="when" title="${esc(c.chart.headline)}">${esc((c.chart.bias || '').replace(/^./, x => x.toUpperCase()))} chart</span>` : '';
+  return divider + `<li class="${c.near ? 'is-near' : ''}"><a class="pick" href="${stockUrl(c.symbol)}">
     <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span data-px="${esc(c.symbol)}">${livePxHtml(c)}</span></div>
-    <div class="pick-main"><div class="pick-top"><span class="heat ${cls} ${up ? 'up' : ''}">${up ? '▲' : '▼'} ${esc(c.rating)} <span class="sc">${c.score}</span></span>
-      ${c.rvol != null ? `<span class="when">${c.rvol.toFixed(1)}× volume</span>` : ''}
-      ${c.headline ? `<span class="when" title="${esc(c.headline)}">${esc((c.bias || '').replace(/^./, x => x.toUpperCase()))} chart</span>` : ''}</div>
-      <div class="chips">${why}${finds}</div></div>
+    <div class="pick-main"><div class="pick-top">${sideBadge(c.side, c.playbook)}<span class="heat ${c.score >= 60 ? 'hot' : 'strong'} ${buy ? 'up' : ''}">Score ${c.score}</span>${chart}${news}</div>
+      <div class="chips">${parts}</div><div class="chips">${why}</div></div>
     <div class="pick-rate"></div>
     <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
   </a></li>`;
 }
 function trendNote(T) {
-  const H = T && T.history, side = PREFS.dir === 'down' ? 'down' : 'up';
-  let hist = '';
-  if (H && H[side] && H.base) {
-    const a = H[side], b = H.base, f = v => fmtPct(v, 2);
-    hist = `<p><b>What this list did next</b> (backtest, ${(a.n || 0).toLocaleString('en-US')} picks, ${esc(H.meta.from || '')} to ${esc(H.meta.to || '')}, buying the next open):
-      next day ${f(a.avg1)}, 5 days ${f(a.avg5)}, 10 days ${f(a.avg10)}; any stock on the same days: ${f(b.avg1)}, ${f(b.avg5)}, ${f(b.avg10)}.
-      ${side === 'up'
-        ? 'Chasing big up-movers gave almost no edge: the next day was slightly negative on average.'
-        : 'Big down-movers tended to bounce afterwards, so this is not a short list.'}</p>`;
+  const side = PREFS.dir === 'down' ? 'SELL' : 'BUY';
+  const M = T && T.model && T.model[side], SC = SCAN.scorecard;
+  let bt = '', live = '';
+  if (M && M.test && M.test.n) {
+    const t = M.test, b = M.base_test || {};
+    bt = `<p><b>Backtest on data it was not tuned on</b>${M.period ? ` (${esc(M.period)})` : ''}: ${side === 'BUY' ? 'up' : 'down'} 5 trading days later <b>${t.hit.toFixed(0)}%</b> of the time vs ${b.hit != null ? b.hit.toFixed(0) + '%' : '—'} for any stock, average ${fmtPct(t.avg, 2)} per pick${M.test10 && M.test10.n ? `; 10 days: ${M.test10.hit.toFixed(0)}%` : ''}. ${t.n.toLocaleString('en-US')} picks.</p>`;
   }
-  return `<li class="trend-note"><p><b>Not a buy or sell list.</b> It ranks how strongly and cleanly a stock is moving right now (0 to 100): size of the move, volume for the time of day, where it sits in today's range, 20-day breakouts, EMA trend and the chart read. Stop and target are 1.5× and 3× the daily ATR, for reference.</p>${hist}</li>`;
+  const L = SC && SC[side];
+  if (L && L.n5) live = `<p><b>Live scorecard</b> since ${esc(SC.since)}: right after 5 days <b>${L.hit5.toFixed(0)}%</b> of ${L.n5} picks${L.n10 ? `, after 10 days ${L.hit10.toFixed(0)}% of ${L.n10}` : ''}. ${L.open} still open.</p>`;
+  else live = '<p><b>Live scorecard:</b> every pick is logged and checked 5 and 10 trading days later. Results show here once the first picks are old enough.</p>';
+  return `<li class="trend-note"><p><b>Most likely to ${side === 'BUY' ? 'go up' : 'go down'}</b>, scored 0 to 100 from the scanner setup (8:00 AM logic), the chart read (patterns, candles, volume, EMA, levels), trend pullbacks, today's range, trend, plus news (Finnhub + Marketaux) and company health. Updated every 15 minutes; the backtest used end-of-day data, so the list is most reliable near the close. Odds, not certainties: use the stop.</p>${bt}${live}</li>`;
 }
 function renderPicks() {
-  const m = SCAN.morning, w = SCAN.watch, T = SCAN.trending;
+  const m = SCAN.morning, w = SCAN.watch, T = SCAN.top10;
   const buys = (m && m.buys) || [], sells = (m && m.sells) || [], live = (w && w.entries) || [];
   const sentB = buys.filter(c => c.top_pick).length, sentS = sells.filter(c => c.top_pick).length;
   $('cBuys').textContent = buys.length ? (sentB || buys.length) : '';
   $('cSells').textContent = sells.length ? (sentS || sells.length) : '';
   $('cLive').textContent = live.length || '';
-  $('cTrend').textContent = T && (T.up || T.down) ? ((T.up || []).length + (T.down || []).length) || '' : '';
+  $('cTrend').textContent = T && (T.BUY || T.SELL) ? ((T.BUY || []).length + (T.SELL || []).length) || '' : '';
   if (pickTab === 'trend') {
     $('scanWhen').textContent = T && T.ts
       ? `Rebuilt every 15 minutes during market hours · last ${ago(T.ts)} (${etTime(T.ts, {hour: 'numeric', minute: '2-digit'})} ET).`
@@ -544,8 +550,8 @@ function renderPicks() {
   if (pickTab === 'live') {
     emptyT = 'No new setups yet today'; emptyS = 'New matches from the 15-minute checks show up here with the time they were found.';
   } else if (pickTab === 'trend') {
-    emptyT = T ? 'Nothing is moving hard right now' : 'No trending list yet';
-    emptyS = T ? 'Stocks appear here when they move 3%+ on above-normal volume, or trade 3× their usual volume.' : 'The list is built by the 15-minute scan during market hours (9:30 AM to 4:00 PM ET).';
+    emptyT = T ? 'Nothing clears the bar right now' : 'No Top 10 yet';
+    emptyS = T ? 'Only stocks whose combined score clears the tested minimum are listed. Fewer than 10 is normal.' : 'The lists are built by the 15-minute scan during market hours (9:30 AM to 4:00 PM ET).';
   } else {
     side = pickTab === 'buys' ? 'BUY' : 'SELL';
     const all = pickTab === 'buys' ? buys : sells;
@@ -565,11 +571,11 @@ function renderPicks() {
   const base = baseRows().length;
   if (base && !list.length) { emptyT = 'No matches'; emptyS = 'Nothing here matches your search or filters.'; }
   const shown = list.slice(0, 120);
-  const note = pickTab === 'trend' && shown.length ? trendNote(T) : '';
+  const note = pickTab === 'trend' && T ? trendNote(T) : '';
   $('pickList').innerHTML = shown.length
-    ? note + shown.map(c => pickTab === 'trend' ? trendRow(c) : pickRow(c, isLive ? c.side : side, isLive)).join('')
+    ? note + shown.map((c, i) => pickTab === 'trend' ? trendRow(c, shown[i - 1]) : pickRow(c, isLive ? c.side : side, isLive)).join('')
       + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}.</li>` : '')
-    : `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
+    : note + `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
   const key = list.map(c => c.symbol).join(',');
   if (key !== livepSyms) { livepSyms = key; refreshPickPrices(); }
 }

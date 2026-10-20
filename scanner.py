@@ -183,7 +183,8 @@ import chart_analysis
 import fundamentals
 import regime as regime_mod
 import sentiment
-import trending
+import scorecard
+import top_picks
 
 log = logging.getLogger("stockbot.scanner")
 
@@ -225,7 +226,7 @@ WATCH_SEEN_KEY = "scanner_watch_seen"  # {"date": "YYYY-MM-DD", "symbols": [...]
 SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboard
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
 SCAN_WATCH_LAST_KEY = "scanner_watch_last"  # poller key: last watch pass ran
-SCAN_TRENDING_KEY = "scanner_trending"
+SCAN_TOP10_KEY = "scanner_top10"   # live Top-10 BUY / SELL (combined score)
 WATCH_INTERVAL_MIN = 15    # cron cadence of the watch pass (deploy/crontab)
 WATCH_PUSH_MAX = 12        # cap symbols listed in one watch push (4 KB)
 
@@ -1394,26 +1395,31 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     screened = 0
     push_ok: bool | None = None
     minutes = chart_analysis.session_minutes(_et_now())
-    movers: dict = {}   # trending candidates: {sym: (metrics, bars)}
+    collector = top_picks.Collector()   # Top-10 BUY / SELL candidates
+    try:
+        to_grade = scorecard.pending_symbols(store)
+    except Exception:  # noqa: BLE001
+        to_grade = set()
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
+        grade_bars = {}
         for sym in universe[ci:ci + 100]:
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
-            # Trending looks at EVERY stock each pass (before the
-            # already-alerted skip) — it's "what's moving now".
+            if sym in to_grade:
+                grade_bars[sym] = bars
+            screened += 1
+            res = technical_screen(bars, volume_scale=volume_scale,
+                                   spy_closes=spy)
+            # The Top-10 lists rank EVERY stock each pass (before the
+            # already-alerted skip below).
             try:
-                mm = trending.mover_metrics(bars, minutes)
-                if mm and trending.is_candidate(mm):
-                    movers[sym] = (mm, bars)
+                collector.add(sym, res, bars)
             except Exception:  # noqa: BLE001 - never breaks the watch
                 pass
             if _seen_covers_both(seen_set, sym):
                 continue
-            screened += 1
-            res = technical_screen(bars, volume_scale=volume_scale,
-                                   spy_closes=spy)
             if res is None or not passes_liquidity(bars):
                 continue
             # The labeled side must clear ITS bar (BUY: its playbook's).
@@ -1428,6 +1434,11 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
             fresh.append({"symbol": sym, "side": side,
                           "score": score,
                           **res})
+        if grade_bars and not dry_run:
+            try:
+                scorecard.grade(store, grade_bars)
+            except Exception as e:  # noqa: BLE001
+                log.warning("watch: scorecard grading failed: %s", e)
     # Push-only price floor: sub-$3 matches never reach the phone (and are
     # NOT marked seen — the dashboard morning lists are unaffected).
     floored = [r for r in fresh if r["price"] >= PUSH_MIN_PRICE]
@@ -1510,37 +1521,48 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         if dry_run:
             print("(no new setups)")
     if not dry_run:
-        t_trend = _persist_trending(store, movers, spy, minutes)
+        t_trend = _persist_top10(store, collector, spy)
         secs = time.monotonic() - t_start
-        log.info("watch: pass took %.0fs (trending %.0fs, %d movers)",
-                 secs, t_trend, len(movers))
+        log.info("watch: pass took %.0fs (top-10 lists %.0fs)", secs, t_trend)
         if secs > WATCH_SLOW_SECS:
             log.warning("watch: pass took %.0fs — over %ds of the %d-minute "
                         "slot", secs, WATCH_SLOW_SECS, WATCH_INTERVAL_MIN)
         _persist_watch_last(store, screened, len(fresh), push_ok,
-                            secs=secs, trending_secs=t_trend)
+                            secs=secs, top10_secs=t_trend)
     return fresh
 
 
 WATCH_SLOW_SECS = 300   # a pass longer than 5 min gets a warning in the log
 
 
-def _persist_trending(store: Store, movers: dict, spy, minutes) -> float:
-    """Rebuild the Top-10 trending lists from this pass (best-effort).
-    Returns the seconds it took."""
+def _persist_top10(store: Store, collector, spy) -> float:
+    """Rank the live Top-10 BUY / SELL lists and log them for the scorecard
+    (best-effort; never breaks the watch). Returns the seconds it took."""
     t0 = time.monotonic()
     try:
-        res = trending.build(movers, spy, minutes)
+        def health(sym, price, side):
+            if side == "BUY":
+                b, rs = fundamental_bonus(store, sym, price)
+                return b / FUND_BONUS_MAX, rs
+            b, rs = short_bonus(store, sym, price)
+            return b / SHORT_BONUS_MAX, rs
+        res = top_picks.rank(collector.candidates(), spy=spy,
+                             sentiment_fn=lambda s: sentiment.get_sentiment(store, s),
+                             health_fn=health)
         res.update({"ts": _et_now().isoformat(), "date": _et_today_str()})
-        store.poller_set(SCAN_TRENDING_KEY, json.dumps(res))
+        try:
+            res["scorecard_new"] = scorecard.record(store, res, _et_today_str())
+        except Exception as e:  # noqa: BLE001
+            log.warning("watch: scorecard record failed: %s", e)
+        store.poller_set(SCAN_TOP10_KEY, json.dumps(res))
     except Exception as e:  # noqa: BLE001
-        log.warning("watch: could not build trending list: %s", e)
+        log.warning("watch: could not build top-10 lists: %s", e)
     return time.monotonic() - t0
 
 
 def _persist_watch_last(store: Store, screened: int, new: int,
                         push_ok: bool | None, secs: float | None = None,
-                        trending_secs: float | None = None) -> None:
+                        top10_secs: float | None = None) -> None:
     """Heartbeat for the dashboard: when the 15-minute pass last ran, how
     many stocks it screened and what it found — written on EVERY pass,
     including the quiet ones that find nothing (those used to leave no
@@ -1550,7 +1572,7 @@ def _persist_watch_last(store: Store, screened: int, new: int,
             "ts": _et_now().isoformat(), "screened": screened, "new": new,
             "push_ok": push_ok, "interval_min": WATCH_INTERVAL_MIN,
             "secs": round(secs, 1) if secs is not None else None,
-            "trending_secs": round(trending_secs, 1) if trending_secs is not None else None}))
+            "top10_secs": round(top10_secs, 1) if top10_secs is not None else None}))
     except Exception as e:  # noqa: BLE001 - heartbeat is best-effort
         log.warning("watch: could not record last-run time: %s", e)
 
