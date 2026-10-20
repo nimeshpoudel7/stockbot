@@ -585,7 +585,11 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
         # --- scanner verdict (technical_screen on the same bars) ------------
         sent = sentiment_mod.get_sentiment(store, symbol)
         verdict = None
-        res = scanner_mod.technical_screen(bars)
+        # SPY closes from the regime cache (no extra REST call) give the
+        # relative-strength leg of the momentum playbook
+        spy_rows = store.candles_load("SPY", "1d", 400)
+        res = scanner_mod.technical_screen(
+            bars, spy_closes=[r["c"] for r in spy_rows] or None)
         if res is not None:
             fb, freasons = scanner_mod.fundamental_bonus(store, symbol, last)
             sb, sreasons = scanner_mod.short_bonus(store, symbol, last)
@@ -619,6 +623,9 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             extra_reasons = list(freasons if side == "BUY" else sreasons)
             if note:
                 extra_reasons.append(note)
+            risk = scanner_mod.risk_note(res, side)
+            if risk:
+                extra_reasons.insert(0, risk + " (ATR-based)")
             verdict = {
                 "side": side,
                 "tech_score": res["tech_score"],
@@ -631,6 +638,10 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                                    for n, p, r in lose],
                 "fundamental_bonus": fb, "fundamental_reasons": freasons,
                 "short_bonus": sb, "short_reasons": sreasons,
+                "playbook": res.get("playbook") if side == "BUY" else None,
+                "trend": res.get("trend"),
+                "push_bar": scanner_mod.push_bar(side, None,
+                                                 res.get("playbook")),
             }
 
         # --- fundamentals (24h-cached pipeline; degrades, never 500s) ------
@@ -1113,7 +1124,7 @@ async function load(){
   const setups=v.setups&&v.setups.length?`<div class="tscroll"><table><thead><tr><th>Setup</th><th>Pts</th><th>Why</th></tr></thead><tbody>${v.setups.map(s=>`<tr><td>${s.name}</td><td>${s.points}</td><td>${esc(s.reason)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">no setups fired on the winning side</p>';
   const counter=v.counter_setups&&v.counter_setups.length?`<p class="muted">Counter-signals: ${v.counter_setups.map(s=>`${s.name} (+${s.points})`).join(' · ')}</p>`:'';
   const reasons=v.reasons&&v.reasons.length?`<p class="muted" style="margin:8px 0 0">Fundamental overlay &amp; notes:</p><ul class="reasons">${v.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`:'';
-  $('verdictCard').innerHTML=`<span class="badge ${sideCls}">${v.side}</span> <b>composite ${v.composite}</b> · <span class="${rateCls(v.rating)}">${v.rating}</span> <span class="muted">(bull ${v.tech_score} vs bear ${v.bear_score})</span>${setups}${reasons}${counter}`;
+  $('verdictCard').innerHTML=`<span class="badge ${sideCls}">${v.side}</span> <b>composite ${v.composite}</b> · <span class="${rateCls(v.rating)}">${v.rating}</span> <span class="muted">(bull ${v.tech_score} vs bear ${v.bear_score}${v.playbook?' · '+esc(v.playbook)+' playbook':''}${v.trend?' · '+esc(v.trend)+' trend':''}${v.push_bar!=null?' · push bar '+v.push_bar:''})</span>${setups}${reasons}${counter}`;
  }
  // fundamentals
  const f=d.fundamentals||{};

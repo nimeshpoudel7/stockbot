@@ -1,6 +1,7 @@
 """Tests for sentiment.py: lexicon scoring, aggregation, rating math, cache,
 analyst recommendations, and scanner integration."""
 import unittest
+from tests.test_scanner import BUY_CLOSES, SELL_CLOSES  # noqa: E402
 from unittest.mock import MagicMock, patch
 
 import sentiment
@@ -529,7 +530,7 @@ class TestScannerIntegration(unittest.TestCase):
         return Store(":memory:")
 
     def _bars(self):
-        closes = [100.0] * 245 + [160.0] * 5
+        closes = BUY_CLOSES
         bars = []
         for i, c in enumerate(closes):
             v = 5_000_000.0 if i == len(closes) - 1 else 1_000_000.0

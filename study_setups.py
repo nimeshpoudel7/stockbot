@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Evidence study of the scanner's technical setups.
+"""HISTORICAL (pre Oct 20, 2026 signal rebuild): this study measured the
+old setups (breakout_watch, golden_cross, overbought_breakdown, ...),
+which no longer exist in scanner.py. Kept for the record; it will not
+run against the current scanner. Use study_trader_signals.py instead.
+
+Evidence study of the scanner's technical setups.
 
 Walk-forward over the S&P 500 fallback universe: for every symbol and every
 evaluation day (after a 250-bar warmup), determine which setups from

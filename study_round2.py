@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Evidence study round 2 — three questions, same discipline as round 1.
+"""HISTORICAL (pre Oct 20, 2026 signal rebuild): this study measured the
+old setups (breakout_watch, golden_cross, overbought_breakdown, ...),
+which no longer exist in scanner.py. Kept for the record; it will not
+run against the current scanner. Use study_trader_signals.py instead.
+
+Evidence study round 2 — three questions, same discipline as round 1.
 
 Q1  Trend double-count: conditional edges of the three trend components
     and the merged "uptrend" alternative.

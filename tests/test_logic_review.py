@@ -3,6 +3,7 @@
 Each test pins the CORRECT behaviour for a bug that was found and fixed.
 """
 import asyncio
+from tests.test_scanner import BUY_CLOSES, SELL_CLOSES  # noqa: E402
 import datetime as dt
 import json
 import random
@@ -177,7 +178,7 @@ class TestSideRatings(unittest.TestCase):
 
     def test_sides_comparable(self):
         # half of each side's scale reads the same
-        self.assertEqual(scanner.side_rating(14, "BUY"),
+        self.assertEqual(scanner.side_rating(50, "BUY"),
                          scanner.side_rating(50, "SELL"))
 
     def test_bad_news_strengthens_sell(self):
@@ -189,25 +190,25 @@ class TestSideRatings(unittest.TestCase):
 
     def test_fundamentals_start_neutral(self):
         # no bonus: the morning rating equals the technical (watch) rating
-        self.assertEqual(scanner.side_rating(28, "BUY", bonus=0), "10.0/10")
-        self.assertEqual(scanner.side_rating(20, "BUY", bonus=0),
-                         scanner.side_rating(20, "BUY"))
+        self.assertEqual(scanner.side_rating(100, "BUY", bonus=0), "10.0/10")
+        self.assertEqual(scanner.side_rating(60, "BUY", bonus=0),
+                         scanner.side_rating(60, "BUY"))
         # bonus moves it by at most +/-2 on its own scale
-        self.assertEqual(scanner.side_rating(14, "BUY", bonus=25), "7.0/10")
-        self.assertEqual(scanner.side_rating(14, "BUY", bonus=-25), "3.0/10")
+        self.assertEqual(scanner.side_rating(50, "BUY", bonus=25), "7.0/10")
+        self.assertEqual(scanner.side_rating(50, "BUY", bonus=-25), "3.0/10")
         self.assertEqual(scanner.side_rating(50, "SELL", bonus=15), "6.0/10")
 
     def test_morning_rating_uses_parts(self):
-        c = {"tech_score": 28, "fund_bonus": 0, "composite": 28,
+        c = {"tech_score": 100, "fund_bonus": 0, "composite": 100,
              "bear_score": 0, "short_bonus": 0, "sentiment": 0.0}
         self.assertEqual(scanner._morning_rating(c, "BUY"), "10.0/10")
 
     def test_buy_bars(self):
-        # uptrend + breakout (20) reaches the morning push...
-        self.assertLessEqual(scanner._morning_bar("BUY", None), 20)
-        # ...but a single setup (max 11) no longer pushes in watch mode
-        self.assertGreater(scanner._watch_bar("BUY", None),
-                           max(scanner.WEIGHTS.values()))
+        # no single setup can push on its own, on either playbook
+        self.assertGreater(scanner._watch_bar("BUY", None, "dip"),
+                           max(scanner.DIP_WEIGHTS.values()))
+        self.assertGreater(scanner._watch_bar("BUY", None, "momentum"),
+                           max(scanner.MOMENTUM_WEIGHTS.values()))
 
 
 class TestPiotroskiCoverage(unittest.TestCase):
@@ -230,7 +231,7 @@ class TestPiotroskiCoverage(unittest.TestCase):
 
 class TestWatchSideEffects(unittest.TestCase):
     def _run(self, store, dry_run, push):
-        closes = [100.0] * 245 + [160.0] * 5
+        closes = BUY_CLOSES
         bars = bars_from(closes)
         bars[-1]["v"] = 5_000_000.0
         rest = MagicMock()
@@ -266,10 +267,10 @@ class TestWatchSideEffects(unittest.TestCase):
 
 class TestMorningOneSidePerSymbol(unittest.TestCase):
     def test_symbol_not_pushed_on_both_sides(self):
-        def screen(bars, volume_scale=1.0):
-            # strong on both sides; bull fraction 28/28 > bear 60/100
-            return {"price": 50.0, "tech_score": 28,
-                    "setups": [("uptrend", 28, "u")], "bear_score": 60,
+        def screen(bars, volume_scale=1.0, **kw):
+            # strong on both sides; BUY 90 > SELL 60
+            return {"price": 50.0, "tech_score": 90, "playbook": "dip",
+                    "setups": [("oversold_rsi30", 90, "u")], "bear_score": 60,
                     "bear_setups": [("x", 60, "x")], "indicators": {}}
         rest = MagicMock()
         rest.daily_bars_multi.return_value = {"T": bars_from([50.0] * 250)}

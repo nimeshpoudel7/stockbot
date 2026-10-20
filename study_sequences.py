@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Sequence evidence study — do CONFIRMED breakouts beat raw breakouts?
+"""HISTORICAL (pre Oct 20, 2026 signal rebuild): this study measured the
+old setups (breakout_watch, golden_cross, overbought_breakdown, ...),
+which no longer exist in scanner.py. Kept for the record; it will not
+run against the current scanner. Use study_trader_signals.py instead.
+
+Sequence evidence study — do CONFIRMED breakouts beat raw breakouts?
 
 Extends study_setups.py (same universe, fetch, causal series replication,
 verification discipline, forward-outcome machinery, and dedupe rule) to
