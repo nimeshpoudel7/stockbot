@@ -25,6 +25,8 @@ import math
 import statistics
 from zoneinfo import ZoneInfo
 
+import pattern_outlook
+
 ET = ZoneInfo("America/New_York")
 
 # ---------------------------------------------------------------------------
@@ -1146,7 +1148,8 @@ def volume_section(ch: Chart, minutes: float | None, partial: bool) -> tuple[lis
 # ---------------------------------------------------------------------------
 # 7. Indicators
 # ---------------------------------------------------------------------------
-def indicators_section(ch: Chart, intraday: list[dict] | None) -> tuple[list[dict], dict]:
+def indicators_section(ch: Chart, intraday: list[dict] | None,
+                       session_vwap: float | None = None) -> tuple[list[dict], dict]:
     c = ch.c[-1]
     h, l, cl = ch.h, ch.l, ch.c
     items = []
@@ -1267,17 +1270,19 @@ def indicators_section(ch: Chart, intraday: list[dict] | None) -> tuple[list[dic
                        f"Key levels: 38.2% {_p(lv[0.382])}, 50% {_p(lv[0.5])}, 61.8% {_p(lv[0.618])}.",
                        "neutral", level=near[1]))
     # VWAP: today's session from 1-minute bars
+    vw = session_vwap
+    last = ch.c[-1]
     if intraday:
         pv = sum((b["h"] + b["l"] + b["c"]) / 3 * (b.get("v") or 0) for b in intraday)
         vv = sum((b.get("v") or 0) for b in intraday)
         if vv:
-            vw = pv / vv
-            last = intraday[-1]["c"]
-            items.append(F("VWAP (today)", f"{_p(vw)} ({'above' if last > vw else 'below'})",
-                           "Average price paid today, weighted by volume. Day traders treat price above VWAP as buyers in "
-                           "control and below as sellers in control.", "bull" if last > vw else "bear"))
+            vw, last = vw or pv / vv, intraday[-1]["c"]
+    if vw:
+        items.append(F("VWAP (today)", f"{_p(vw)} ({'above' if last > vw else 'below'}, {abs(last / vw - 1) * 100:.1f}%)",
+                       "Average price paid today, weighted by volume. Day traders treat price above VWAP as buyers in "
+                       "control and below as sellers in control.", "bull" if last > vw else "bear", level=vw))
     else:
-        items.append(_absent("VWAP (today)", "Needs today's 1-minute bars — only for watchlist stocks during the session."))
+        items.append(_absent("VWAP (today)", "Shown during market hours (9:30 AM to 4:00 PM ET)."))
     return items, extra
 
 
@@ -1410,7 +1415,8 @@ def weekly_trend(ch: Chart) -> str | None:
 
 
 def context_section(ch: Chart, trend: str, spy: list[float] | None,
-                    intraday: list[dict] | None, partial: bool) -> list[dict]:
+                    intraday: list[dict] | None, partial: bool,
+                    session_vwap: float | None = None) -> list[dict]:
     items = []
     c = ch.c[-1]
     p = ch.n - 2 if partial else ch.n - 1
@@ -1446,6 +1452,7 @@ def context_section(ch: Chart, trend: str, spy: list[float] | None,
                                "neutral"))
     else:
         items.append(_absent("Relative strength vs SPY", "SPY history isn't cached yet."))
+    vw = session_vwap if (session_vwap and partial) else (_vwap(intraday) if intraday else None)
     wk = weekly_trend(ch)
     daily = {"up": "up", "down": "down", "range": "sideways"}[trend]
     if wk:
@@ -1454,8 +1461,8 @@ def context_section(ch: Chart, trend: str, spy: list[float] | None,
         items.append(F("Multi-timeframe", f"Weekly {wtxt}, daily {daily}",
                        ("Both timeframes agree." if agree else
                         "The weekly and daily trends disagree — the weekly is the bigger picture; use the daily for timing.")
-                       + (" " + ("Intraday price is above today's VWAP." if intraday and intraday[-1]["c"] > _vwap(intraday)
-                                 else "Intraday price is below today's VWAP." if intraday else "")),
+                       + (" " + ("Price is above today's VWAP." if vw and ch.c[-1] > vw
+                                 else "Price is below today's VWAP." if vw else "")),
                        ("bull" if wk == "up" else "bear" if wk == "down" else "neutral") if agree else "neutral",
                        weight=2 if agree and wk != "range" else 1))
     if intraday:
@@ -1469,9 +1476,9 @@ def context_section(ch: Chart, trend: str, spy: list[float] | None,
                            + ("Price is above it." if last > orh else "Price is below it." if last < orl else "Price is inside it."),
                            "bull" if last > orh else "bear" if last < orl else "neutral"))
         else:
-            items.append(_absent("Opening range (first 30 min)", "Available after 10:00 AM ET for watchlist stocks."))
+            items.append(_absent("Opening range (first 30 min)", "Available after 10:00 AM ET on trading days."))
     else:
-        items.append(_absent("Opening range (first 30 min)", "Needs today's 1-minute bars — watchlist stocks during the session."))
+        items.append(_absent("Opening range (first 30 min)", "Shown during market hours, once today's 1-minute bars are in."))
     return items
 
 
@@ -1558,7 +1565,8 @@ def _series(ch: Chart, xs: list, from_i: int = 0):
 
 def analyze(bars: list[dict], spy_closes: list[float] | None = None,
             intraday: list[dict] | None = None,
-            now: dt.datetime | None = None) -> dict | None:
+            now: dt.datetime | None = None,
+            session_vwap: float | None = None) -> dict | None:
     """Full chart read. bars: daily, oldest-first (>= 60 needed)."""
     if not bars or len(bars) < 60:
         return None
@@ -1574,14 +1582,16 @@ def analyze(bars: list[dict], spy_closes: list[float] | None = None,
     candle_items, candle_markers = candles_section(ch, key["support"], key["resistance"])
     pat_items, pat_lines, trendlines = patterns_section(ch)
     vol_items, vp = volume_section(ch, minutes, partial)
-    ind_items, extra = indicators_section(ch, intraday)
+    ind_items, extra = indicators_section(ch, intraday, session_vwap if partial else None)
     liq_items, liq_zones, liq_markers = liquidity_section(ch)
-    ctx_items = context_section(ch, st["trend"], spy_closes, intraday, partial)
+    ctx_items = context_section(ch, st["trend"], spy_closes, intraday, partial,
+                                session_vwap if partial else None)
     sections = {"trend": trend_section(ch, st), "levels": lv_items, "gaps": gap_items,
                 "candles": candle_items, "patterns": pat_items, "volume": vol_items,
                 "indicators": ind_items, "liquidity": liq_items, "context": ctx_items}
     for k in sections:
         sections[k].sort(key=lambda f: not f["active"])
+    pattern_outlook.annotate(list(sections.values()))
     # chart payload
     from_i = max(0, ch.n - 260)
     bb_mid = sma_s(ch.c, 20)

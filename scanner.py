@@ -179,9 +179,11 @@ from config import Settings
 from notify import send_ntfy
 from storage import Store
 
+import chart_analysis
 import fundamentals
 import regime as regime_mod
 import sentiment
+import trending
 
 log = logging.getLogger("stockbot.scanner")
 
@@ -223,6 +225,7 @@ WATCH_SEEN_KEY = "scanner_watch_seen"  # {"date": "YYYY-MM-DD", "symbols": [...]
 SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboard
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
 SCAN_WATCH_LAST_KEY = "scanner_watch_last"  # poller key: last watch pass ran
+SCAN_TRENDING_KEY = "scanner_trending"
 WATCH_INTERVAL_MIN = 15    # cron cadence of the watch pass (deploy/crontab)
 WATCH_PUSH_MAX = 12        # cap symbols listed in one watch push (4 KB)
 
@@ -1230,6 +1233,7 @@ def _structured(row: dict, side: str) -> dict:
             "stop": lv[0], "target": lv[1],
             "tech_score": row.get("tech_score" if side == "BUY"
                                   else "bear_score"),
+            "rsi": (row.get("indicators") or {}).get("rsi"),
             "setups": [{"name": n, "points": p, "reason": r}
                        for n, p, r in setups]}
 
@@ -1388,13 +1392,23 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     fresh: list[dict] = []
     screened = 0
     push_ok: bool | None = None
+    minutes = chart_analysis.session_minutes(_et_now())
+    movers: dict = {}   # trending candidates: {sym: (metrics, bars)}
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
         for sym in universe[ci:ci + 100]:
-            if _seen_covers_both(seen_set, sym):
-                continue
             bars = bars_by_sym.get(sym)
             if not bars:
+                continue
+            # Trending looks at EVERY stock each pass (before the
+            # already-alerted skip) — it's "what's moving now".
+            try:
+                mm = trending.mover_metrics(bars, minutes)
+                if mm and trending.is_candidate(mm):
+                    movers[sym] = (mm, bars)
+            except Exception:  # noqa: BLE001 - never breaks the watch
+                pass
+            if _seen_covers_both(seen_set, sym):
                 continue
             screened += 1
             res = technical_screen(bars, volume_scale=volume_scale,
@@ -1496,7 +1510,18 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
             print("(no new setups)")
     if not dry_run:
         _persist_watch_last(store, screened, len(fresh), push_ok)
+        _persist_trending(store, movers, spy, minutes)
     return fresh
+
+
+def _persist_trending(store: Store, movers: dict, spy, minutes) -> None:
+    """Rebuild the Top-10 trending lists from this pass (best-effort)."""
+    try:
+        res = trending.build(movers, spy, minutes)
+        res.update({"ts": _et_now().isoformat(), "date": _et_today_str()})
+        store.poller_set(SCAN_TRENDING_KEY, json.dumps(res))
+    except Exception as e:  # noqa: BLE001
+        log.warning("watch: could not build trending list: %s", e)
 
 
 def _persist_watch_last(store: Store, screened: int, new: int,

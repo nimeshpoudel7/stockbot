@@ -185,6 +185,19 @@ class AlpacaFeed(DataFeed):
         out.sort(key=lambda b: b["ts"])  # engine expects oldest-first
         return out[-limit:]
 
+    def get_snapshots(self, symbols: list[str]) -> dict[str, dict]:
+        """Latest trade + today's and yesterday's daily bars for up to 100
+        symbols per call (IEX feed) — live prices for ANY stock, not just
+        the 30 on the websocket."""
+        out: dict[str, dict] = {}
+        syms = sorted({s.upper() for s in symbols if s})
+        for i in range(0, len(syms), 100):
+            data = self._rest("/stocks/snapshots",
+                              {"symbols": ",".join(syms[i:i + 100]),
+                               "feed": "iex"})
+            out.update(parse_snapshots(data))
+        return out
+
     def get_daily_bars(self, symbol: str, days: int = 400) -> list[dict]:
         """The last ``days`` daily bars (trading sessions), oldest-first."""
         end = datetime.now(timezone.utc) - timedelta(minutes=16)
@@ -209,6 +222,36 @@ class AlpacaFeed(DataFeed):
                 break
             params = {**params, "page_token": tok}
         return out[-days:]
+
+
+def parse_snapshots(data: dict) -> dict[str, dict]:
+    """Alpaca /v2/stocks/snapshots -> {SYM: {price, prev_close, day_pct,
+    ts, bar}} where bar is today's daily bar {ts,o,h,l,c,v} (or None)."""
+    raw = data.get("snapshots", data) if isinstance(data, dict) else {}
+    out: dict[str, dict] = {}
+    for sym, snap in (raw or {}).items():
+        if not isinstance(snap, dict):
+            continue
+        lt = snap.get("latestTrade") or {}
+        db = snap.get("dailyBar") or {}
+        pb = snap.get("prevDailyBar") or {}
+        price = lt.get("p") or db.get("c")
+        if not price:
+            continue
+        prev = pb.get("c")
+        bar = None
+        if db.get("t"):
+            bar = {"ts": int(_parse_alpaca_ts(db["t"])), "o": db.get("o"),
+                   "h": max(db.get("h") or price, price),
+                   "l": min(db.get("l") or price, price),
+                   "c": price, "v": db.get("v", 0)}
+        out[sym.upper()] = {
+            "price": float(price), "prev_close": prev,
+            "day_pct": ((price - prev) / prev * 100) if prev else None,
+            "ts": _parse_alpaca_ts(lt["t"]) if lt.get("t") else None,
+            "vwap": db.get("vw"),
+            "bar": bar}
+    return out
 
 
 # --------------------------------------------------------------- Finnhub ---

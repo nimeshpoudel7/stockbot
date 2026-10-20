@@ -244,6 +244,10 @@ async def amain() -> None:
         "backtest_run": _backtest_run,
         "backtest_last": lambda: backtest_state,
         "daily_bars": _daily_bars,
+        # live price / today's bar for ANY symbol (Alpaca snapshots, IEX)
+        "snapshots": (alpaca.get_snapshots if alpaca else None),
+        # today's 1-minute bars for VWAP / opening range on non-watchlist
+        "intraday_bars": (lambda s: alpaca.get_1m_bars(s, 400)) if alpaca else None,
     }
     app = create_app(store, engine, market,
                      {"add_symbol": add_symbol, "remove_symbol": remove_symbol},
