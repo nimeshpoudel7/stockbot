@@ -75,8 +75,10 @@ def _fires(alert_type: str, bars: list[dict], params: dict) -> list[int]:
         fast_n, slow_n = int(params.get("fast", 20)), int(params.get("slow", 50))
         if len(closes) >= slow_n + 2:
             for i in range(slow_n + 1, len(closes)):
-                f0 = ind.sma(closes[:i - 1], fast_n)
-                s0 = ind.sma(closes[:i - 1], slow_n)
+                # previous bar = closes[:i] (ends at i-1); closes[:i-1]
+                # ended at i-2, so one cross could fire on two bars
+                f0 = ind.sma(closes[:i], fast_n)
+                s0 = ind.sma(closes[:i], slow_n)
                 f1 = ind.sma(closes[:i + 1], fast_n)
                 s1 = ind.sma(closes[:i + 1], slow_n)
                 if None in (f0, s0, f1, s1):

@@ -639,9 +639,25 @@ class TestWatchMode(unittest.TestCase):
         rest.daily_bars_multi.return_value = {}
         with patch.object(sessions_mod, "is_trading_day", return_value=True), \
              patch.object(scanner, "get_universe", return_value=[]):
-            scanner.run_scan(store=store, rest=rest, dry_run=True)
+            scanner.run_scan(store=store, rest=rest, dry_run=False,
+                             push_fn=MagicMock(return_value=True))
         seen = json.loads(store.poller_get(scanner.WATCH_SEEN_KEY))
         self.assertEqual(seen["symbols"], [])
+
+    def test_morning_dry_run_keeps_seen(self):
+        # a dry run must not re-arm today's already-sent watch alerts
+        import json
+        store = self._store()
+        store.poller_set(scanner.WATCH_SEEN_KEY,
+                         json.dumps({"date": scanner._et_today_str(),
+                                     "symbols": ["TESTA|BUY"]}))
+        rest = MagicMock()
+        rest.daily_bars_multi.return_value = {}
+        with patch.object(sessions_mod, "is_trading_day", return_value=True), \
+             patch.object(scanner, "get_universe", return_value=[]):
+            scanner.run_scan(store=store, rest=rest, dry_run=True)
+        seen = json.loads(store.poller_get(scanner.WATCH_SEEN_KEY))
+        self.assertEqual(seen["symbols"], ["TESTA|BUY"])
 
 
 class TestScannerPersistence(unittest.TestCase):

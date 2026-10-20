@@ -231,8 +231,10 @@ Run manually: `python -m scanner` (scan + push) or
 `python -m scanner --dry-run` (print the ranked list, no push).
 
 **Ratings:** every setup shown to the user carries a rating out of 10 with
-one decimal (e.g. `6.8/10`) derived from the internal 0–100 composite score
-— display-only; all internal scores and thresholds stay 0–100.
+one decimal (e.g. `6.8/10`): the score as a fraction of **its own side's
+scale** (BUY: 28 technical + 25 fundamental points; SELL: 100 + 30; watch
+mode uses the technical part only), so a full-strength BUY and a
+full-strength SELL both read 10.0/10. Display-only; internal scores stay raw.
 
 **Sentiment overlay** (`sentiment.py`) — two free Finnhub signals, candidates
 only (never the full universe), each leg cached 24h in SQLite:
@@ -248,8 +250,9 @@ only (never the full universe), each leg cached 24h in SQLite:
 Combined total = 0.65 × news + 0.35 × analyst (news-heavier — analyst
 consensus skews bullish, since almost nobody rates "sell"). It shifts
 the /10 rating by
-total × 1.5 (clamped to [0, 10]) — a buy setup on glowing news and bullish
-analysts can show 7.8/10 instead of 6.8/10. Each alert shows the breakdown,
+total × 1.5 (clamped to [0, 10]), signed by side: good news raises a BUY
+and lowers a SELL, bad news does the reverse — a buy setup on glowing news
+and bullish analysts can show 7.8/10 instead of 6.8/10. Each alert shows the breakdown,
 e.g. `news: +0.6 | analysts: 31 buy / 4 hold / 1 sell` (Strong Buy folds
 into buy, Strong Sell into sell). No coverage on either leg → no sentiment
 line, rating unchanged. Fetch failures degrade to neutral and are cached,
@@ -258,11 +261,13 @@ so a dead feed never hammers the API or crashes a scan.
 **Watch mode** — `python -m scanner --watch` (or `--watch --dry-run`):
 re-runs the technical screen over the universe and pushes an ntfy alert
 **immediately** when a symbol *newly* matches the setup rules
-(bull score ≥ 30 → **"BUY SETUP: XYZ @ $1.23 — 6.8/10 — oversold bounce,
-RSI 28, volume 2.4x"**; bear score ≥ 30 → **"SELL SETUP: …"**; single
-weak setups ignored as noise). Dedupe: flagged symbols persist in SQLite
-(`scanner_watch_seen`) — one alert per symbol per trading day; the morning
-scan resets the list. No fundamentals in watch mode (keeps it fast and
+(bull score ≥ 20, e.g. uptrend + near 52-week high → **"BUY SETUP: XYZ
+@ $12.30 — 7.1/10 — within 1.2% of 52-week high; in uptrend"**; bear score
+≥ 30 → **"SELL SETUP: …"**; single weak setups ignored as noise). Dedupe:
+flagged symbols persist in SQLite (`scanner_watch_seen`) — one alert per
+symbol per side per trading day, recorded only after the push succeeds
+(a failed push retries next pass; `--dry-run` never touches the list).
+The morning scan resets the list. No fundamentals in watch mode (keeps it fast and
 free-tier-safe). Guards: weekdays + trading day + 09:30–16:00 ET from the
 sessions.py calendar — exits quietly otherwise.
 

@@ -65,8 +65,13 @@ class RegimeCache:
             return self._cached
         self._last_try = time.time()
         closes = self._load_closes()
-        # stale/empty -> fetch a year of SPY daily bars via Alpaca (1 call)
-        if len(closes) < SMA_N + SLOPE_DAYS:
+        # Fetch fresh SPY bars once per day (tracked in SQLite so short-lived
+        # scanner processes share it). The old check only fetched when the
+        # cache was SHORT, so once 220+ closes were stored the regime froze.
+        fetched_key = "regime_spy_fetched"
+        need = (len(closes) < SMA_N + SLOPE_DAYS
+                or self.store.poller_get(fetched_key) != today or force)
+        if need:
             try:
                 bars = self.daily_bars_fn(SYMBOL, 400)
             except Exception as e:  # noqa: BLE001
@@ -74,16 +79,23 @@ class RegimeCache:
                 bars = []
             if bars:
                 self.store.candles_save(SYMBOL, "1d", bars)
-                closes = [b["c"] for b in bars]
+                self.store.poller_set(fetched_key, today)
+                closes = self._load_closes()
         self._cached = compute_regime(closes)
-        if self._cached:
-            self._asof = today  # only "done" when we have a real answer
+        if self._cached and (not need or self.store.poller_get(
+                fetched_key) == today):
+            self._asof = today  # only "done" when the data is today's
             log.info("regime: %s (SPY %.2f vs SMA200 %.2f)",
                      self._cached["regime"], self._cached["price"],
                      self._cached["sma200"])
         return self._cached
 
     def current(self) -> str | None:
-        """Regime string for AlertEngine.regime_fn. Refreshes at most daily."""
+        """Regime string. Refreshes (network) at most daily."""
         r = self.refresh()
         return r["regime"] if r else None
+
+    def cached(self) -> str | None:
+        """Regime from memory only — never touches the network. Used on the
+        live tick path, where a blocking REST call would stall the feed."""
+        return self._cached["regime"] if self._cached else None

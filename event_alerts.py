@@ -29,6 +29,7 @@ EARN_API = "https://finnhub.io/api/v1/stock/earnings"
 
 SPLIT_KEYWORDS = ("stock split", "share split", "split ratio",
                   "forward split", "reverse split")
+NEWS_POLL_HOURS = 4  # news poll cadence per symbol (6 calls/day max)
 BUYBACK_KEYWORDS = ("buyback", "share repurchase", "repurchase program",
                     "repurchase authoriz", "buy back")
 
@@ -49,7 +50,9 @@ class EventPoller:
     async def run_forever(self, interval_s: int = 3600):
         while True:
             try:
-                self.run_once()
+                # blocking HTTP calls: keep them off the event loop that
+                # also carries the price feeds and the dashboard
+                await asyncio.to_thread(self.run_once)
             except Exception as e:  # noqa: BLE001 - poller must never die
                 log.warning("event poller error: %s", e)
             await asyncio.sleep(interval_s)
@@ -91,11 +94,15 @@ class EventPoller:
 
         articles: list[dict] | None = None
         if types & {"split_announced", "buyback_announced", "news_spike"}:
-            if self.store.poller_get(f"poll_news:{symbol}") != today:
+            # Poll news every NEWS_POLL_HOURS (not once per day): a single
+            # poll just after midnight UTC saw an empty "today" and
+            # detected spikes a day late. Event keys dedupe repeat fires.
+            slot = f"{today}:{dt.datetime.now(dt.timezone.utc).hour // NEWS_POLL_HOURS}"
+            if self.store.poller_get(f"poll_news:{symbol}") != slot:
                 articles = self._fetch_news(symbol)
-                self.store.poller_set(f"poll_news:{symbol}", today)
+                self.store.poller_set(f"poll_news:{symbol}", slot)
             else:
-                articles = []  # already polled today; dedupe via event keys
+                articles = []  # already polled this slot
 
         if articles:
             fired += self._check_splits(symbol, alerts, articles)
@@ -176,16 +183,20 @@ class EventPoller:
                           articles: list[dict]) -> list[int]:
         fired: list[int] = []
         counts = self._day_counts(articles)
-        if not counts:
+        if not counts or len(counts) < 5:
             return fired
-        days = sorted(counts)
-        if len(days) < 5:
-            return fired
-        today_count = counts[days[-1]]
-        baseline = sorted(counts[d] for d in days[-21:-1])
+        # Compare TODAY against the previous 20 calendar days, counting
+        # days with no articles as 0. (It used to take the last day that
+        # had any news — possibly days ago — and dropped zero days, which
+        # pushed the median up.)
+        today = dt.datetime.now(dt.timezone.utc).date()
+        today_count = counts.get(today.isoformat(), 0)
+        baseline = sorted(
+            counts.get((today - dt.timedelta(days=k)).isoformat(), 0)
+            for k in range(1, 21))
         median = baseline[len(baseline) // 2]
         if today_count >= 3 and today_count >= 3 * max(median, 1):
-            key = f"newsspike:{days[-1]}"
+            key = f"newsspike:{today.isoformat()}"
             for alert in alerts:
                 if alert["type"] == "news_spike":
                     self._fire(alert, 0,
@@ -200,10 +211,16 @@ class EventPoller:
         r = requests.get(EARN_API, params={"symbol": symbol, "token": self.key},
                          timeout=30)
         r.raise_for_status()
-        quarters = r.json() if isinstance(r.json(), list) else []
-        for q in quarters:
-            if q.get("actual") is None or q.get("estimate") is None:
-                continue
+        data = r.json()
+        quarters = data if isinstance(data, list) else []
+        # Only the LATEST reported quarter matters. Looping over every
+        # quarter overwrote the state with each older one in turn, so the
+        # stored "report" was always the oldest quarter, re-dated to today.
+        reported = [q for q in quarters
+                    if q.get("actual") is not None
+                    and q.get("estimate") is not None]
+        reported.sort(key=lambda q: str(q.get("period", "")), reverse=True)
+        for q in reported[:1]:
             period = str(q.get("period", ""))
             seen_key = f"earn_seen:{symbol}"
             if self.store.poller_get(seen_key) == f"{period}:{q['actual']}":

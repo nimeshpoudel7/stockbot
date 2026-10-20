@@ -39,7 +39,7 @@ If the installer printed missing keys, edit `.env` and fill them in:
 |---|---|---|
 | `ALPACA_KEY` / `ALPACA_SECRET` | https://alpaca.markets → Your API keys (free) | Real-time data + websocket feed |
 | `FINNHUB_KEY` | https://finnhub.io (free) | Fundamentals, news, analyst ratings |
-| `NTFY_TOPIC` | Free ntfy app on your phone | Hard-to-guess topic name, e.g. `stockbot-q7x2m9-alerts` |
+| `NTFY_TOPIC` | Free ntfy app on your phone | Hard-to-guess topic name, e.g. `stockbot-<random>-alerts` |
 | `DASHBOARD_TOKEN` | You invent it | `openssl rand -hex 24` — the dashboard password |
 | `NTFY_SERVER` | (leave unset) | Defaults to `https://ntfy.sh`, which works natively on a real server. The `envs.net` workaround was specific to the proxied dev VM. |
 

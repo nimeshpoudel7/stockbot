@@ -93,12 +93,20 @@ class TestSessions(unittest.TestCase):
 class TestWalkForward(unittest.TestCase):
     def test_splits(self):
         import predict as P
-        splits = list(P.walk_forward_splits(60, train=30, test=10))
+        splits = list(P.walk_forward_splits(60, train=30, test=10, gap=0))
         self.assertEqual(len(splits), 3)
         tr, te = splits[0]
         self.assertEqual((tr[0], tr[-1], te[0], te[-1]), (0, 29, 30, 39))
         tr, te = splits[2]
         self.assertEqual((tr[0], tr[-1], te[0], te[-1]), (20, 49, 50, 59))
+
+    def test_splits_embargo_gap(self):
+        # default gap = label horizon: test starts HORIZON rows after train
+        import predict as P
+        splits = list(P.walk_forward_splits(60, train=30, test=10))
+        self.assertEqual(len(splits), 2)
+        tr, te = splits[0]
+        self.assertEqual((tr[-1], te[0]), (29, 30 + P.HORIZON))
 
     def test_no_splits_when_short(self):
         import predict as P

@@ -604,8 +604,8 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             side = scanner_mod.classify_side(res)
             score = (row["composite"] if side == "BUY"
                      else row["short_composite"])
-            rating = sentiment_mod.adjusted_rating_str(
-                score, sent["sentiment"])
+            rating = scanner_mod.side_rating(score, side, "morning",
+                                             sent["sentiment"])
             win = res["setups"] if side == "BUY" else res["bear_setups"]
             lose = res["bear_setups"] if side == "BUY" else res["setups"]
             # Reasons list = the NON-setup lines only (fundamental overlay
@@ -835,6 +835,7 @@ form.inline{display:inline}
 <div class="card" id="eventsCard" style="display:none"><h3>Fire history <span id="evTitle"></span></h3><div class="tscroll"><table id="evTable"><thead><tr><th>Time (ET)</th><th>Price</th><th>Detail</th></tr></thead><tbody></tbody></table></div></div>
 
 <script>
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=id=>document.getElementById(id);
 let META={};
 const DASH_TOKEN=new URLSearchParams(location.search).get('token')||'';
@@ -872,7 +873,7 @@ function showScan(w){scanTab=w;$('scanMorning').style.display=w==='morning'?'':'
  if(w==='morning'){ts.textContent=SCAN.morning?('scan: '+new Date(SCAN.morning.ts).toLocaleString('en-US',{timeZone:'America/New_York'})):'No scan yet — first scan runs 8:00 AM ET';}
  else{ts.textContent=SCAN.watch?('today: '+SCAN.watch.date):'No watch matches yet today';}}
 function fillScan(tid,list,empty){$(tid).querySelector('tbody').innerHTML=(list&&list.length)
- ?list.map((c,i)=>`<tr><td>${i+1}</td><td class="sym"><a href="${stockUrl(c.symbol)}" style="color:#93c5fd">${c.symbol}</a></td><td>${fmtP(c.price)}</td><td class="${rateCls(c.rating)}">${c.rating}</td><td>${c.breakdown||''}</td></tr>`).join('')
+ ?list.map((c,i)=>`<tr><td>${i+1}</td><td class="sym"><a href="${stockUrl(c.symbol)}" style="color:#93c5fd">${c.symbol}</a></td><td>${fmtP(c.price)}</td><td class="${rateCls(c.rating)}">${c.rating}</td><td>${esc(c.breakdown)}</td></tr>`).join('')
  :`<tr><td colspan="5" class="muted">${empty}</td></tr>`;}
 async function loadScanner(){try{SCAN=await api('GET','/api/scanner');}catch(e){return;}
  $('hdrScan').textContent=SCAN.morning?('last scan: '+new Date(SCAN.morning.ts).toLocaleString('en-US',{timeZone:'America/New_York'})):'no scan yet';
@@ -881,7 +882,7 @@ async function loadScanner(){try{SCAN=await api('GET','/api/scanner');}catch(e){
  else{fillScan('scanBuys',m.buys,'no buy candidates above the bar');fillScan('scanSells',m.sells,'no sell candidates above the bar');}
  const rows=(SCAN.watch&&SCAN.watch.entries)||[];
  $('scanWatchTable').querySelector('tbody').innerHTML=rows.length
- ?rows.map(e=>`<tr><td>${e.time?new Date(e.time).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'}):'—'}</td><td class="sym"><a href="${stockUrl(e.symbol)}" style="color:#93c5fd">${e.symbol}</a></td><td class="${e.side==='BUY'?'up':'down'}">${e.side}</td><td>${fmtP(e.price)}</td><td class="${rateCls(e.rating)}">${e.rating}</td><td>${e.breakdown||''}</td></tr>`).join('')
+ ?rows.map(e=>`<tr><td>${e.time?new Date(e.time).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'}):'—'}</td><td class="sym"><a href="${stockUrl(e.symbol)}" style="color:#93c5fd">${e.symbol}</a></td><td class="${e.side==='BUY'?'up':'down'}">${e.side}</td><td>${fmtP(e.price)}</td><td class="${rateCls(e.rating)}">${e.rating}</td><td>${esc(e.breakdown)}</td></tr>`).join('')
  :'<tr><td colspan="6" class="muted">no watch matches yet today</td></tr>';
  showScan(scanTab);}
 $('addSym').onsubmit=async e=>{e.preventDefault();const s=$('symInput').value.trim().toUpperCase();if(!s)return;
@@ -924,7 +925,7 @@ $('alertForm').onsubmit=async e=>{e.preventDefault();
   $('aCancel').onclick();loadAlerts();}catch(err){alert(err.message);}};
 async function showEvents(id,desc){const ev=await api('GET','/api/alerts/'+id+'/events');
  $('eventsCard').style.display='';$('evTitle').textContent='— '+desc;
- $('evTable').querySelector('tbody').innerHTML=ev.map(e=>`<tr><td>${new Date(e.ts).toLocaleString('en-US',{timeZone:'America/New_York'})}</td><td>$${e.price.toFixed(2)}</td><td>${e.detail}</td></tr>`).join('')||'<tr><td colspan=3 class=muted>no fires yet</td></tr>';}
+ $('evTable').querySelector('tbody').innerHTML=ev.map(e=>`<tr><td>${new Date(e.ts).toLocaleString('en-US',{timeZone:'America/New_York'})}</td><td>$${e.price.toFixed(2)}</td><td>${esc(e.detail)}</td></tr>`).join('')||'<tr><td colspan=3 class=muted>no fires yet</td></tr>';}
 (async function init(){await loadMeta();await loadWatchlist();await loadAlerts();loadScanner();loadRegime();loadScores();loadPredictions();loadBacktest();setInterval(refreshQuotes,2000);setInterval(loadScanner,60000);refreshQuotes();})();
 // regime badge
 async function loadRegime(){try{const r=await api('GET','/api/regime');
@@ -948,7 +949,7 @@ async function loadPredictions(){const {symbols}=await api('GET','/api/watchlist
  const tb=$('predTable').querySelector('tbody');
  const rows=await Promise.all(symbols.map(async sym=>{try{const p=await api('GET','/api/predict/'+sym);
   const hr=p.walk_forward.hit_rate;
-  return `<tr><td class="sym">${sym}</td><td>${(p.latest_proba_up*100).toFixed(1)}%</td><td>${hr!=null?(hr*100).toFixed(1)+'% ('+p.walk_forward.tested+' tests)':'n/a'}</td><td>${p.trained_at.slice(0,10)}</td><td><button class="ghost" onclick="trainPredict('${sym}')">retrain</button></td></tr>`;}
+  return `<tr><td class="sym">${sym}</td><td>${p.latest_proba_up==null?'n/a':(p.latest_proba_up*100).toFixed(1)+'%'}</td><td>${hr!=null?(hr*100).toFixed(1)+'% ('+p.walk_forward.tested+' tests)':'n/a'}</td><td>${p.trained_at.slice(0,10)}</td><td><button class="ghost" onclick="trainPredict('${sym}')">retrain</button></td></tr>`;}
   catch(e){return `<tr><td class="sym">${sym}</td><td colspan="3" class="muted">no model — train one</td><td><button onclick="trainPredict('${sym}')">train</button></td></tr>`;}}));
  tb.innerHTML=rows.join('')||'<tr><td colspan="5" class="muted">watchlist empty</td></tr>';}
 async function trainPredict(sym){if(!confirm('Train experimental model for '+sym+'? (uses ~2y daily bars)'))return;
@@ -1048,6 +1049,7 @@ a{color:#93c5fd}
 <div class="card" id="sentCard"><span class="muted">loading…</span></div>
 
 <script>
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=id=>document.getElementById(id);
 const QS=new URLSearchParams(location.search);
 const DASH_TOKEN=QS.get('token')||'';
@@ -1105,14 +1107,14 @@ async function load(){
  if(!v){$('verdictCard').innerHTML='<span class="muted">not enough daily history for the technical screen</span>';}
  else{
   const sideCls=v.side==='BUY'?'buy':'sell';
-  const setups=v.setups&&v.setups.length?`<div class="tscroll"><table><thead><tr><th>Setup</th><th>Pts</th><th>Why</th></tr></thead><tbody>${v.setups.map(s=>`<tr><td>${s.name}</td><td>${s.points}</td><td>${s.reason}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">no setups fired on the winning side</p>';
+  const setups=v.setups&&v.setups.length?`<div class="tscroll"><table><thead><tr><th>Setup</th><th>Pts</th><th>Why</th></tr></thead><tbody>${v.setups.map(s=>`<tr><td>${s.name}</td><td>${s.points}</td><td>${esc(s.reason)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">no setups fired on the winning side</p>';
   const counter=v.counter_setups&&v.counter_setups.length?`<p class="muted">Counter-signals: ${v.counter_setups.map(s=>`${s.name} (+${s.points})`).join(' · ')}</p>`:'';
-  const reasons=v.reasons&&v.reasons.length?`<p class="muted" style="margin:8px 0 0">Fundamental overlay &amp; notes:</p><ul class="reasons">${v.reasons.map(r=>`<li>${r}</li>`).join('')}</ul>`:'';
+  const reasons=v.reasons&&v.reasons.length?`<p class="muted" style="margin:8px 0 0">Fundamental overlay &amp; notes:</p><ul class="reasons">${v.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`:'';
   $('verdictCard').innerHTML=`<span class="badge ${sideCls}">${v.side}</span> <b>composite ${v.composite}</b> · <span class="${rateCls(v.rating)}">${v.rating}</span> <span class="muted">(bull ${v.tech_score} vs bear ${v.bear_score})</span>${setups}${reasons}${counter}`;
  }
  // fundamentals
  const f=d.fundamentals||{};
- if(f.error){$('fundTable').querySelector('tbody').innerHTML=`<tr><td colspan="6" class="muted">${f.error}</td></tr>`;}
+ if(f.error){$('fundTable').querySelector('tbody').innerHTML=`<tr><td colspan="6" class="muted">${esc(f.error)}</td></tr>`;}
  else{
   const fp=f.piotroski,denom=(fp&&(fp.evaluable!=null&&fp.evaluable<fp.of))?fp.evaluable:(fp?fp.of:null);
   const pc=fp?(fp.score==null?'n/a':`${fp.score}/${denom}`):'n/a';

@@ -24,6 +24,42 @@ log = logging.getLogger("stockbot.feed")
 
 Tick = namedtuple("Tick", ["symbol", "price", "size", "ts"])  # ts = epoch seconds
 
+SESSIONS_52W = 252  # trading sessions in one year
+
+
+def _et_today() -> str:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+def calendar_days_for(sessions: int) -> int:
+    """Calendar-day window that holds ``sessions`` trading days (+ slack
+    for holidays): ~252 sessions per 365 calendar days."""
+    return int(sessions * 365 / 252) + 15
+
+
+def daily_stats(daily: list[dict], today_et: str) -> dict:
+    """prev_close / 52-week high+low / closes from COMPLETED daily bars.
+
+    A bar dated today (ET) is the still-forming session — during market
+    hours Alpaca returns it — so it is dropped: prev_close must be the
+    LAST COMPLETED session's close, and the 52-week extremes must not
+    already include today's move (or a new high could never be "new").
+    """
+    # Daily-bar timestamps mark the session's date at 00:00 UTC (Finnhub)
+    # or 04:00/05:00 UTC = midnight ET (Alpaca); the UTC date is the
+    # session date for both.
+    done = [b for b in daily
+            if datetime.fromtimestamp(b["ts"], timezone.utc).date()
+            .isoformat() < today_et]
+    year = done[-SESSIONS_52W:]
+    return {
+        "prev_close": done[-1]["c"] if done else None,
+        "high_52w": max(b["h"] for b in year) if year else None,
+        "low_52w": min(b["l"] for b in year) if year else None,
+        "daily_closes": [b["c"] for b in done],
+    }
+
 
 def _parse_alpaca_ts(s: str) -> float:
     # "2026-10-19T14:00:00.123456789Z" — trim to microseconds for fromisoformat
@@ -134,32 +170,44 @@ class AlpacaFeed(DataFeed):
         # Free Basic plan cannot fetch the latest 15 minutes; end before that.
         end = datetime.now(timezone.utc) - timedelta(minutes=16)
         start = end - timedelta(days=3)
+        # sort=desc: Alpaca's `limit` keeps the FIRST N bars in sort order,
+        # so asc + limit returned the oldest bars of the 3-day window.
         data = self._rest("/stocks/bars", {
             "symbols": symbol, "timeframe": "1Min",
             "start": start.isoformat(), "end": end.isoformat(),
-            "limit": min(limit, 1000), "feed": "iex", "sort": "asc",
+            "limit": min(limit, 1000), "feed": "iex", "sort": "desc",
         })
         out = []
         for b in data.get("bars", {}).get(symbol, []):
             ts = int(_parse_alpaca_ts(b["t"]) // 60 * 60)
             out.append({"ts": ts, "o": b["o"], "h": b["h"],
                         "l": b["l"], "c": b["c"], "v": b.get("v", 0)})
+        out.sort(key=lambda b: b["ts"])  # engine expects oldest-first
         return out[-limit:]
 
     def get_daily_bars(self, symbol: str, days: int = 400) -> list[dict]:
+        """The last ``days`` daily bars (trading sessions), oldest-first."""
         end = datetime.now(timezone.utc) - timedelta(minutes=16)
-        start = end - timedelta(days=days + 30)
-        data = self._rest("/stocks/bars", {
+        # ~252 sessions per 365 calendar days: size the window in calendar
+        # days so `days` really means sessions
+        start = end - timedelta(days=calendar_days_for(days))
+        params = {
             "symbols": symbol, "timeframe": "1Day",
             "start": start.isoformat(), "end": end.isoformat(),
             "limit": 1000, "feed": "iex", "sort": "asc",
             "adjustment": "split",
-        })
+        }
         out = []
-        for b in data.get("bars", {}).get(symbol, []):
-            out.append({"ts": int(_parse_alpaca_ts(b["t"])),
-                        "o": b["o"], "h": b["h"], "l": b["l"],
-                        "c": b["c"], "v": b.get("v", 0)})
+        while True:
+            data = self._rest("/stocks/bars", params)
+            for b in data.get("bars", {}).get(symbol, []):
+                out.append({"ts": int(_parse_alpaca_ts(b["t"])),
+                            "o": b["o"], "h": b["h"], "l": b["l"],
+                            "c": b["c"], "v": b.get("v", 0)})
+            tok = data.get("next_page_token")
+            if not tok:
+                break
+            params = {**params, "page_token": tok}
         return out[-days:]
 
 
@@ -225,7 +273,7 @@ class FinnhubFeed(DataFeed):
 
     def get_daily_bars(self, symbol: str, days: int = 400) -> list[dict]:
         to_ = int(datetime.now(timezone.utc).timestamp())
-        frm = to_ - (days + 30) * 86400
+        frm = to_ - calendar_days_for(days) * 86400
         r = requests.get("https://finnhub.io/api/v1/stock/candle", params={
             "symbol": symbol, "resolution": "D", "from": frm, "to": to_,
             "token": self.key}, timeout=20)
@@ -291,17 +339,17 @@ class FeedManager:
         if feed is None:
             raise ValueError(f"{symbol} is not assigned to any feed")
         bars = await asyncio.to_thread(feed.get_1m_bars, symbol, bars_1m)
+        stats = await self.daily_refresh(symbol, daily_days)
+        return {"bars_1m": bars, **stats}
+
+    async def daily_refresh(self, symbol: str, daily_days: int = 400) -> dict:
+        """prev_close / 52-week range / daily closes from completed sessions
+        (see daily_stats). Run at warm-up and again every new trading day."""
+        feed = self.feed_for(symbol)
+        if feed is None:
+            raise ValueError(f"{symbol} is not assigned to any feed")
         daily = await asyncio.to_thread(feed.get_daily_bars, symbol, daily_days)
-        prev_close = daily[-1]["c"] if daily else None
-        highs = [b["h"] for b in daily]
-        lows = [b["l"] for b in daily]
-        return {
-            "bars_1m": bars,
-            "prev_close": prev_close,
-            "high_52w": max(highs) if highs else None,
-            "low_52w": min(lows) if lows else None,
-            "daily_closes": [b["c"] for b in daily],
-        }
+        return daily_stats(daily, _et_today())
 
     async def run(self, plan: dict[str, list[str]], queue: asyncio.Queue) -> None:
         """Run every feed's websocket loop concurrently (each reconnects)."""

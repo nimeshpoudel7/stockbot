@@ -75,8 +75,8 @@ Guards: weekdays + trading day + 09:30-16:00 ET via the sessions.py
 calendar; exits quietly otherwise.
 
 Display: every setup shown to the user carries a rating out of 10 with one
-decimal (e.g. 6.8/10) derived from the internal 0-100 composite score via
-_rating() — display-only; all internal scores and thresholds stay 0-100.
+decimal (e.g. 6.8/10): the score as a fraction of its own side's scale
+(side_rating) — display-only; internal scores and thresholds stay raw.
 
 Sentiment (sentiment.py): ranked candidates (morning scan) and newly
 matched symbols (watch mode) get a sentiment overlay from two free Finnhub
@@ -232,8 +232,8 @@ WATCH_PUSH_MAX = 15        # cap symbols listed in one watch push
 # bars are morning 25/65 and watch 25/45.
 BULL_TECH_MAX = sum(WEIGHTS.values())        # 28 — derived, never hardcoded
 BEAR_TECH_MAX = sum(BEAR_WEIGHTS.values())   # 100 — derived, never hardcoded
-# Informational ceilings only (the scale the old fraction bars used);
-# bars no longer derive from these.
+# Side scale ceilings: push bars no longer derive from these, but the
+# displayed /10 rating does (side_rating: score as a fraction of its side).
 FUND_BONUS_MAX = 25    # fundamental_bonus ceiling: Piotroski +10, Altman +5, DCF +10
 SHORT_BONUS_MAX = 30   # short_bonus ceiling: Piotroski +10, Altman +10, DCF +10
 MORNING_BUY_BAR = 20    # composite: uptrend + breakout, or 2 setups + funds
@@ -333,7 +333,10 @@ class AlpacaREST:
         """
         out: dict[str, list[dict]] = {}
         end = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=16)
-        start = end - dt.timedelta(days=days + 30)
+        # `days` is a SESSION count: ~252 sessions per 365 calendar days.
+        # (days + 30 calendar days gave ~228 sessions for days=300, so the
+        # "52-week" high/low really covered ~11 months.)
+        start = end - dt.timedelta(days=int(days * 365 / 252) + 15)
         for i in range(0, len(symbols), 100):
             chunk = symbols[i:i + 100]
             params = {"symbols": ",".join(chunk), "timeframe": "1Day",
@@ -552,6 +555,31 @@ def _rating(score: float) -> str:
     return f"{max(0.0, min(score, 100.0)) / 10.0:.1f}/10"
 
 
+def side_scale(side: str, mode: str = "morning") -> int:
+    """Max raw score for a side: tech max (+ fundamental bonus max in the
+    morning scan, which runs the overlay; watch mode doesn't)."""
+    if side == "BUY":
+        return BULL_TECH_MAX + (FUND_BONUS_MAX if mode == "morning" else 0)
+    return BEAR_TECH_MAX + (SHORT_BONUS_MAX if mode == "morning" else 0)
+
+
+def side_rating(score: float, side: str, mode: str = "morning",
+                sent: float = 0.0) -> str:
+    """X.X/10 display rating for a BUY or SELL score.
+
+    The score is first put on 0–100 as a FRACTION OF ITS OWN SIDE'S SCALE
+    (the push bars already work this way). Rating the raw points made a
+    perfect technical BUY (28 of 28) read 2.8/10 while a single 30-point
+    SELL signal read 3.0/10.
+
+    Sentiment is signed by side: good news raises a BUY and LOWERS a SELL
+    (it argues against the short); bad news does the reverse.
+    """
+    pct = max(0.0, min(100.0, score / side_scale(side, mode) * 100.0))
+    signed = sent if side == "BUY" else -sent
+    return sentiment.adjusted_rating_str(pct, signed)
+
+
 def technical_screen(bars: list[dict],
                      volume_scale: float = 1.0) -> dict | None:
     """Score one symbol's daily bars, bullish and bearish. None when there
@@ -704,6 +732,22 @@ def classify_side(res: dict) -> str:
 # ---------------------------------------------------------------------------
 # Fundamental overlay (top technical scorers only)
 # ---------------------------------------------------------------------------
+PIOTROSKI_MIN_TESTS = 7  # tests that must be evaluable before it scores
+
+
+def _piotroski_usable(pio: dict) -> int | None:
+    """Piotroski score, or None when too few of the 9 tests could run.
+
+    Untestable items count as failures in the raw score, so a company
+    with no prior-year filing maxes out at 3/9 and read as "weak" — a
+    data gap scored as bad fundamentals. Missing data now scores 0.
+    """
+    evaluated = pio.get("evaluated")
+    if evaluated is not None and evaluated < PIOTROSKI_MIN_TESTS:
+        return None
+    return pio.get("score")
+
+
 def _dcf_usable(dcf: dict) -> bool:
     """True only when the DCF leg may score: the model ran on a positive
     base FCF. A fair value derived from zero/negative free cash flow (or
@@ -728,7 +772,7 @@ def fundamental_bonus(store: Store, symbol: str,
         return 0, []
 
     pio = data.get("piotroski") or {}
-    pscore = pio.get("score")
+    pscore = _piotroski_usable(pio)
     if pscore is not None:
         if pscore >= 8:
             bonus += 10
@@ -778,7 +822,7 @@ def short_bonus(store: Store, symbol: str,
         return 0, []
 
     pio = data.get("piotroski") or {}
-    pscore = pio.get("score")
+    pscore = _piotroski_usable(pio)
     if pscore is not None:
         if pscore <= 2:
             bonus += 10
@@ -1126,8 +1170,8 @@ def _watch_entry(r: dict) -> dict:
             "side": r["side"],
             "price": r["price"],
             "score": r["score"],
-            "rating": sentiment.adjusted_rating_str(
-                r["score"], r.get("sentiment", 0.0)),
+            "rating": side_rating(r["score"], r["side"], "watch",
+                                  r.get("sentiment", 0.0)),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "time": _et_now().isoformat()}
@@ -1251,9 +1295,6 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         _attach_earnings_note(store, r, settings.finnhub_key)
 
     if fresh:
-        seen["symbols"].extend(_seen_key(r["symbol"], r["side"])
-                               for r in fresh)
-        _save_seen(store, seen)
         buys = [r for r in fresh if r["side"] == "BUY"]
         sells = [r for r in fresh if r["side"] == "SELL"]
 
@@ -1265,7 +1306,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                     r["sentiment_payload"]))
             reasons = _with_note(reasons, r)
             return (f"{r['side']}: {r['symbol']} @ {_fmt_price(r['price'])} — "
-                    f"{sentiment.adjusted_rating_str(r['score'], r.get('sentiment', 0.0))} — "
+                    f"{side_rating(r['score'], r['side'], 'watch', r.get('sentiment', 0.0))} — "
                     f"{'; '.join(reasons)}")
 
         shown = fresh[:WATCH_PUSH_MAX]
@@ -1279,30 +1320,39 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
                          if len(buys) != 1
                          else f"BUY SETUP: {buys[0]['symbol']} @ "
                               f"{_fmt_price(buys[0]['price'])} — "
-                              f"{sentiment.adjusted_rating_str(buys[0]['score'], buys[0].get('sentiment', 0.0))}")
+                              f"{side_rating(buys[0]['score'], 'BUY', 'watch', buys[0].get('sentiment', 0.0))}")
         if sells:
             parts.append(f"SELL SETUP: {len(sells)} new"
                          if len(sells) != 1
                          else f"SELL SETUP: {sells[0]['symbol']} @ "
                               f"{_fmt_price(sells[0]['price'])} — "
-                              f"{sentiment.adjusted_rating_str(sells[0]['score'], sells[0].get('sentiment', 0.0))}")
+                              f"{side_rating(sells[0]['score'], 'SELL', 'watch', sells[0].get('sentiment', 0.0))}")
         title = " · ".join(parts)
         body = "\n".join(lines)
         if dry_run:
+            # dry run: print only — never touch the seen-list, or the
+            # real 15-minute watch would stay silent on these symbols
             print(title)
             print(body)
-        elif push_fn is None:
-            ok = send_ntfy(settings.ntfy_server, settings.ntfy_topic,
-                            title, body, priority=4,
-                            tags=["rotating_light", "chart_with_upwards_trend"],
-                            timeout=30)
+        else:
+            if push_fn is None:
+                ok = send_ntfy(settings.ntfy_server, settings.ntfy_topic,
+                               title, body, priority=4,
+                               tags=["rotating_light",
+                                     "chart_with_upwards_trend"],
+                               timeout=30)
+            else:
+                ok = push_fn(title, body)
             log.info("watch: ntfy push %s (%d new: %d buy, %d sell)",
                      "sent" if ok else "FAILED",
                      len(fresh), len(buys), len(sells))
-        else:
-            push_fn(title, body)
-        if not dry_run:
-            _persist_watch(store, fresh)
+            if ok:
+                # mark seen only once the alert actually reached the
+                # phone; a failed push is retried on the next pass
+                seen["symbols"].extend(_seen_key(r["symbol"], r["side"])
+                                       for r in fresh)
+                _save_seen(store, seen)
+                _persist_watch(store, fresh)
     else:
         log.info("watch: no new setups")
         if dry_run:
@@ -1332,8 +1382,8 @@ def _morning_entry(c: dict, side: str, top_pick: bool = False) -> dict:
     return {"symbol": c["symbol"],
             "price": c["price"],
             "score": score,
-            "rating": sentiment.adjusted_rating_str(
-                score, c.get("sentiment", 0.0)),
+            "rating": side_rating(score, side, "morning",
+                                  c.get("sentiment", 0.0)),
             "breakdown": "; ".join(reasons),
             "reasons": reasons,
             "sentiment": c.get("sentiment", 0.0),
@@ -1378,7 +1428,7 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     rest = rest or AlpacaREST(settings.alpaca_key, settings.alpaca_secret)
 
     # --- trading-day guard --------------------------------------------------
-    today = dt.date.today().isoformat()
+    today = _et_today_str()
     is_open = sessions_mod.is_trading_day(store, today)
     if is_open is None:
         sessions_mod.refresh_cache(store)
@@ -1388,7 +1438,9 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         return {"buys": [], "sells": []}
 
     # fresh day, fresh watch: the morning scan resets the watch seen-list
-    _reset_seen(store)
+    # (not on a dry run — that would re-fire every alert already sent today)
+    if not dry_run:
+        _reset_seen(store)
 
     # --- universe -----------------------------------------------------------
     universe = get_universe(store, rest)
@@ -1463,9 +1515,14 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     if sell_bar != _morning_bar("SELL", None):
         log.info("scan: %s regime — sell push bar raised to %d",
                  regime, sell_bar)
-    buy_cands = [r for r in bull_rows if r["composite"] >= buy_bar]
+    # One side per symbol in the push: a name with both bull and bear
+    # setups goes to the side classify_side picks (score as a fraction of
+    # each side's scale), so a push never says BUY and SELL for one stock.
+    buy_cands = [r for r in bull_rows if r["composite"] >= buy_bar
+                 and classify_side(r) == "BUY"]
     sell_cands = [r for r in bear_rows
-                  if r["short_composite"] >= sell_bar]
+                  if r["short_composite"] >= sell_bar
+                  and classify_side(r) == "SELL"]
     # Push-only price floor: penny names are the noisiest (and most
     # manipulable) spike/breakout sources — they stay on the dashboard
     # lists but never reach the phone below PUSH_MIN_PRICE.
@@ -1498,12 +1555,12 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     # --- output ---------------------------------------------------------------
     def _buy_line(i: int, c: dict) -> str:
         return (f"{i}. BUY: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{sentiment.adjusted_rating_str(c['composite'], c.get('sentiment', 0.0))} — "
+                f"{side_rating(c['composite'], 'BUY', 'morning', c.get('sentiment', 0.0))} — "
                 f"{'; '.join(_candidate_reasons(c, 'BUY'))}")
 
     def _sell_line(i: int, c: dict) -> str:
         return (f"{i}. SELL: {c['symbol']} @ {_fmt_price(c['price'])} — "
-                f"{sentiment.adjusted_rating_str(c['short_composite'], c.get('sentiment', 0.0))} — "
+                f"{side_rating(c['short_composite'], 'SELL', 'morning', c.get('sentiment', 0.0))} — "
                 f"{'; '.join(_candidate_reasons(c, 'SELL'))}")
 
     sections: list[str] = []

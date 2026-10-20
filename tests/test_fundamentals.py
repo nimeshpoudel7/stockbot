@@ -123,8 +123,11 @@ class TestDCF(unittest.TestCase):
         cur, prev = F.extract_annual(cur_r), F.extract_annual(prev_r)
         d = F.dcf_fair_value(cur, prev, wacc=0.10, growth=0.10,
                              terminal_growth=0.03)
-        # growth == wacc -> each projected FCF discounts to exactly 200
-        self.assertAlmostEqual(d["fair_value"], 33.43, places=1)
+        # growth == wacc -> each projected FCF discounts to exactly 200.
+        # Equity = EV - long-term debt (300) + cash (200); payables and
+        # other operating liabilities are NOT subtracted (they used to be:
+        # total liabilities 800 -> 33.43).
+        self.assertAlmostEqual(d["fair_value"], 38.43, places=1)
         self.assertEqual(d["wacc"], 0.10)
 
     def test_negative_fcf_none(self):
