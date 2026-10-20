@@ -78,7 +78,8 @@
 .heat.active{color:var(--ink-2);border:1px solid var(--line-soft)}
 .heat .sc{font-variant-numeric:tabular-nums;font-weight:500;color:var(--mute)}
 .chip.find{border-style:dashed}
-.trend-note{font-size:.82rem;color:var(--mute);padding:10px 18px;border-top:1px solid var(--line-soft)}
+.trend-note{font-size:.84rem;color:var(--ink-2);padding:12px 18px;border-top:1px solid var(--line-soft);background:var(--panel-2)}
+.trend-note p{margin:0;max-width:80ch}.trend-note p + p{margin-top:8px}.trend-note b{color:var(--ink);font-weight:600}
 
 /* watchlist */
 .wl-form{display:flex;gap:8px;padding:0 16px 12px}
@@ -358,7 +359,7 @@ async function loadRegime() {
 let SCAN = {morning: null, watch: null, trending: null}, pickTab = 'buys', showAll = false;
 function renderLiveStatus() {
   const box = $('liveStatus');
-  box.hidden = pickTab !== 'live';
+  box.hidden = pickTab !== 'live' && pickTab !== 'trend';
   if (box.hidden) return;
   const L = SCAN.watch_last, open = marketOpenNow();
   const every = (L && L.interval_min) || 15;
@@ -368,7 +369,8 @@ function renderLiveStatus() {
     const at = etTime(L.ts, {hour: 'numeric', minute: '2-digit'});
     const found = L.new ? `${L.new} new setup${L.new === 1 ? '' : 's'}` : 'nothing new';
     const today = etTime(L.ts, {year: 'numeric', month: '2-digit', day: '2-digit'}) === etTime(new Date().toISOString(), {year: 'numeric', month: '2-digit', day: '2-digit'});
-    const last = `Last checked <b>${today ? at + ' ET' : etTime(L.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'}) + ' ET'}</b>, ${(L.screened || 0).toLocaleString('en-US')} stocks, ${found}${L.push_ok === false ? ' (push to phone failed, will retry)' : ''}.`;
+    const took = L.secs != null ? `, took ${L.secs < 90 ? Math.round(L.secs) + ' s' : (L.secs / 60).toFixed(1) + ' min'}` : '';
+    const last = `Last checked <b>${today ? at + ' ET' : etTime(L.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'}) + ' ET'}</b>, ${(L.screened || 0).toLocaleString('en-US')} stocks, ${found}${took}${L.push_ok === false ? ' (push to phone failed, will retry)' : ''}.`;
     if (open && age > every * 2 + 5) {
       cls = 'stale';
       html = `${last} No check for ${Math.round(age)} min, so the 15-minute scan may have stopped. Check <code>logs/cron.log</code> on the server.`;
@@ -501,6 +503,19 @@ function trendRow(c) {
     <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
   </a></li>`;
 }
+function trendNote(T) {
+  const H = T && T.history, side = PREFS.dir === 'down' ? 'down' : 'up';
+  let hist = '';
+  if (H && H[side] && H.base) {
+    const a = H[side], b = H.base, f = v => fmtPct(v, 2);
+    hist = `<p><b>What this list did next</b> (backtest, ${(a.n || 0).toLocaleString('en-US')} picks, ${esc(H.meta.from || '')} to ${esc(H.meta.to || '')}, buying the next open):
+      next day ${f(a.avg1)}, 5 days ${f(a.avg5)}, 10 days ${f(a.avg10)}; any stock on the same days: ${f(b.avg1)}, ${f(b.avg5)}, ${f(b.avg10)}.
+      ${side === 'up'
+        ? 'Chasing big up-movers gave almost no edge: the next day was slightly negative on average.'
+        : 'Big down-movers tended to bounce afterwards, so this is not a short list.'}</p>`;
+  }
+  return `<li class="trend-note"><p><b>Not a buy or sell list.</b> It ranks how strongly and cleanly a stock is moving right now (0 to 100): size of the move, volume for the time of day, where it sits in today's range, 20-day breakouts, EMA trend and the chart read. Stop and target are 1.5× and 3× the daily ATR, for reference.</p>${hist}</li>`;
+}
 function renderPicks() {
   const m = SCAN.morning, w = SCAN.watch, T = SCAN.trending;
   const buys = (m && m.buys) || [], sells = (m && m.sells) || [], live = (w && w.entries) || [];
@@ -550,11 +565,10 @@ function renderPicks() {
   const base = baseRows().length;
   if (base && !list.length) { emptyT = 'No matches'; emptyS = 'Nothing here matches your search or filters.'; }
   const shown = list.slice(0, 120);
-  const note = pickTab === 'trend' && shown.length
-    ? `<li class="trend-note">What's moving now, ranked 0 to 100 on the size of the move, volume for the time of day, where it sits in today's range, 20-day breakouts, EMA trend and the full chart read. It is a watchlist of momentum, not a tested buy or sell signal; big movers often reverse. Stop and target are 1.5× and 3× the daily ATR.</li>` : '';
+  const note = pickTab === 'trend' && shown.length ? trendNote(T) : '';
   $('pickList').innerHTML = shown.length
-    ? shown.map(c => pickTab === 'trend' ? trendRow(c) : pickRow(c, isLive ? c.side : side, isLive)).join('')
-      + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}.</li>` : '') + note
+    ? note + shown.map(c => pickTab === 'trend' ? trendRow(c) : pickRow(c, isLive ? c.side : side, isLive)).join('')
+      + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}.</li>` : '')
     : `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
   const key = list.map(c => c.symbol).join(',');
   if (key !== livepSyms) { livepSyms = key; refreshPickPrices(); }

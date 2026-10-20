@@ -125,6 +125,7 @@
 .odds{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;margin-top:8px;font-size:.8rem;color:var(--mute)}
 .odds .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;position:relative}
 .odds .bar i{display:block;height:100%}
+.odds .odds-h{grid-column:1/-1;font-size:.74rem}
 .odds b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 .upd{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:var(--mute)}
 .upd .dot{width:7px;height:7px;border-radius:50%;background:var(--mute)}
@@ -439,9 +440,12 @@ async function drawChart() {
 let readTab = null;
 const pillCls = b => b === 'bull' ? 'good' : b === 'bear' ? 'bad' : '';
 function oddsHtml(o) {
+  // direction-adjusted: for a bearish finding the bars show how often the stock went LOWER
+  const word = o.dir === 'down' ? 'lower' : 'higher';
   const row = (lbl, v, col) => `<span>${lbl}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></i></span><b>${v.toFixed(0)}%</b>`;
-  return `<div class="odds" aria-label="Higher 10 days later: ${o.up10.toFixed(0)}% after this, ${o.base_up10.toFixed(0)}% on any day">
-    ${row('After this', o.up10, o.edge10 >= 0.3 ? 'var(--buy)' : o.edge10 <= -0.3 ? 'var(--sell)' : 'var(--amber)')}${row('Any day', o.base_up10, 'var(--mute)')}</div>`;
+  return `<div class="odds" aria-label="${word} 10 days later: ${o.hit.toFixed(0)}% after this, ${o.base_hit.toFixed(0)}% on any day">
+    <span class="odds-h">${word === 'lower' ? 'Lower' : 'Higher'} 10 trading days later</span>
+    ${row('After this', o.hit, o.edge10 >= 0.3 ? 'var(--buy)' : o.edge10 <= -0.3 ? 'var(--sell)' : 'var(--amber)')}${row('Any day', o.base_hit, 'var(--mute)')}</div>`;
 }
 function fdHtml(f) {
   const next = f.next || f.odds_text
