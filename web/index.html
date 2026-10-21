@@ -86,8 +86,6 @@
 .heat .sc{font-variant-numeric:tabular-nums;font-weight:500;color:var(--mute)}
 .chip.find{border-style:dashed}
 .chip.part b{font-weight:600;margin-left:4px}
-.exit-line{font-size:.82rem;color:var(--ink-2)}.exit-line b{color:var(--ink);font-weight:600}
-.warn-line{font-size:.82rem;color:var(--amber-text)}
 .is-near .pick{opacity:.78}
 .near-h{background:transparent}
 .chip.part.pos b{color:var(--buy)}.chip.part.neg b{color:var(--sell)}
@@ -196,7 +194,6 @@ details.more[open] summary{margin-bottom:14px}
           <button type="button" data-pick="sells" aria-pressed="false">Sell <span class="count" id="cSells"></span></button>
           <button type="button" data-pick="live" aria-pressed="false">Live today <span class="count" id="cLive"></span></button>
           <button type="button" data-pick="trend" aria-pressed="false">Top 10 now <span class="count" id="cTrend"></span></button>
-          <button type="button" data-pick="pos" aria-pressed="false">Hold 1–3 mo <span class="count" id="cPos"></span></button>
         </div>
       </div>
       <div class="pick-tools" id="pickTools">
@@ -438,7 +435,6 @@ const sinceOf = c => { const q = LIVEP[c.symbol]; return q && q.price != null &&
 function baseRows() {
   const m = SCAN.morning, w = SCAN.watch, t = SCAN.top10;
   if (pickTab === 'live') return ((w && w.entries) || []).map((c, i) => Object.assign({_i: i}, c));
-  if (pickTab === 'pos') return ((SCAN.position && SCAN.position.BUY) || []).map(c => Object.assign({}, c, {side: 'BUY', score: c.mom12, rank_: c.rank}));
   if (pickTab === 'trend') { const k = PREFS.dir === 'down' ? 'SELL' : 'BUY'; return t ? (t[k] || []).concat((t[k + '_near'] || []).map(c => Object.assign({near: true}, c))) : []; }
   const all = pickTab === 'buys' ? ((m && m.buys) || []) : ((m && m.sells) || []);
   const top = all.filter(c => c.top_pick);
@@ -515,35 +511,10 @@ function trendRow(c, prev) {
   return divider + `<li class="${c.near ? 'is-near' : ''}"><a class="pick" href="${stockUrl(c.symbol)}">
     <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span data-px="${esc(c.symbol)}">${livePxHtml(c)}</span></div>
     <div class="pick-main"><div class="pick-top">${sideBadge(c.side, c.playbook)}<span class="heat ${c.score >= 60 ? 'hot' : 'strong'} ${buy ? 'up' : ''}">Score ${c.score}</span>${chart}${news}</div>
-      <div class="chips">${parts}</div><div class="chips">${why}</div>
-      ${c.earnings ? `<div class="warn-line">${esc(c.earnings)}: reports inside the holding window, so it is kept out of the tested list.</div>` : ''}
-      ${c.exit ? `<div class="exit-line"><b>Exit plan:</b> ${esc(c.exit)}</div>` : ''}</div>
+      <div class="chips">${parts}</div><div class="chips">${why}</div></div>
     <div class="pick-rate"></div>
     <div class="pick-risk">${ladder(c.price, c.stop, c.target)}</div>
   </a></li>`;
-}
-function posRow(c) {
-  const notes = (c.notes || []).map(n => `<span class="chip">${esc(n)}</span>`).join('');
-  return `<li><a class="pick" href="${stockUrl(c.symbol)}">
-    <div class="pick-id"><span class="tick">${esc(c.symbol)}</span><span data-px="${esc(c.symbol)}">${livePxHtml(c)}</span></div>
-    <div class="pick-main"><div class="pick-top"><span class="side buy">#${c.rank_} momentum</span>
-      <span class="heat strong up">12-month ${fmtPct(c.mom12, 0)}</span><span class="when">last month ${fmtPct(c.ret1m, 1)}</span>
-      <span class="when">${c.from_high >= -1 ? 'at its 52-week high' : fmtPct(c.from_high, 0) + ' from 52-week high'}</span></div>
-      <div class="chips"><span class="chip">${c.above50 ? 'above' : 'below'} 50-day</span><span class="chip">${c.above200 ? 'above' : 'below'} 200-day</span>${notes}</div>
-      ${c.warning ? `<div class="warn-line">${esc(c.warning)}</div>` : ''}
-      <div class="exit-line"><b>Exit plan:</b> ${esc(c.exit)}</div></div>
-    <div class="pick-rate"></div><div class="pick-risk"></div>
-  </a></li>`;
-}
-function posNote(P) {
-  const B = P && P.backtest, SC = SCAN.position_scorecard, L = SC && SC.BUY;
-  const t = B && B.sp500_test;
-  let html = `<p><b>Momentum leaders, for 1–3 month holds.</b> The S&amp;P 500 stocks that rose most over the past 12 months (skipping the latest month), refreshed every morning. Hold about 3 months, rebalance monthly, and spread money evenly across the list. This is the most researched long-term stock edge, but it crashes in sharp market reversals.</p>`;
-  if (P && P.risk_off) html += `<p class="warn-line"><b>Caution:</b> SPY is below its 200-day average. Momentum has its worst losses in markets like this; many traders hold cash until SPY recovers.</p>`;
-  if (t) html += `<p><b>Backtest</b> (${esc(B.test_period)}, not used to choose the rule): ${t.hit.toFixed(0)}% of trades ended up, average ${fmtPct(t.avg_trade, 1)} per 3-month trade, about ${fmtPct(t.year, 0)} a year vs ${fmtPct(B.spy_year, 0)} for SPY, worst dip ${t.maxdd.toFixed(0)}%. <b>Reality check:</b> the test uses today's S&amp;P members, so stocks that rose into the index are included and the result is flattered; on small caps the same rule made only ${fmtPct(B.smallcap_test.year, 0)} a year. Most of the profit comes from a few big winners, so the hit rate stays near 50%.</p>`;
-  html += L && L.n21 ? `<p><b>Live scorecard:</b> up after 1 month ${L.hit21.toFixed(0)}% of ${L.n21} picks${L.n63 ? `, after 3 months ${L.hit63.toFixed(0)}% of ${L.n63}` : ''}.</p>`
-    : '<p><b>Live scorecard:</b> each new entry is logged and checked 1 and 3 months later.</p>';
-  return `<li class="trend-note">${html}</li>`;
 }
 function trendNote(T) {
   const side = PREFS.dir === 'down' ? 'SELL' : 'BUY';
@@ -556,8 +527,6 @@ function trendNote(T) {
   const L = SC && SC[side];
   if (L && L.n5) live = `<p><b>Live scorecard</b> since ${esc(SC.since)}: right after 5 days <b>${L.hit5.toFixed(0)}%</b> of ${L.n5} picks${L.n10 ? `, after 10 days ${L.hit10.toFixed(0)}% of ${L.n10}` : ''}. ${L.open} still open.</p>`;
   else live = '<p><b>Live scorecard:</b> every pick is logged and checked 5 and 10 trading days later. Results show here once the first picks are old enough.</p>';
-  const X = T && T.exits && T.exits[side];
-  if (X) bt += `<p><b>With the exit plan</b> (${esc(X.text.toLowerCase())}) the same picks ended green <b>${X.test_hit.toFixed(0)}%</b> of the time on unseen data, but the average gain stays small (${fmtPct(X.test_avg, 2)} per trade after costs). These are short swing trades; for bigger moves see <b>Hold 1–3 mo</b>.</p>`;
   return `<li class="trend-note"><p><b>Most likely to ${side === 'BUY' ? 'go up' : 'go down'}</b>, scored 0 to 100 from the scanner setup (8:00 AM logic), the chart read (patterns, candles, volume, EMA, levels), trend pullbacks, today's range, trend, plus news (Finnhub + Marketaux) and company health. Updated every 15 minutes; the backtest used end-of-day data, so the list is most reliable near the close. Odds, not certainties: use the stop.</p>${bt}${live}</li>`;
 }
 function renderPicks() {
@@ -568,11 +537,7 @@ function renderPicks() {
   $('cSells').textContent = sells.length ? (sentS || sells.length) : '';
   $('cLive').textContent = live.length || '';
   $('cTrend').textContent = T && (T.BUY || T.SELL) ? ((T.BUY || []).length + (T.SELL || []).length) || '' : '';
-  const P = SCAN.position;
-  $('cPos').textContent = P && P.BUY ? P.BUY.length || '' : '';
-  if (pickTab === 'pos') {
-    $('scanWhen').textContent = P && P.ts ? `Refreshed with the morning scan · ${etTime(P.ts, {weekday: 'short', hour: 'numeric', minute: '2-digit'})} ET. Prices update live.` : 'Built by the 8:00 AM ET scan on trading days.';
-  } else if (pickTab === 'trend') {
+  if (pickTab === 'trend') {
     $('scanWhen').textContent = T && T.ts
       ? `Rebuilt every 15 minutes during market hours · last ${ago(T.ts)} (${etTime(T.ts, {hour: 'numeric', minute: '2-digit'})} ET).`
       : 'Rebuilt every 15 minutes while the market is open.';
@@ -584,15 +549,13 @@ function renderPicks() {
   document.querySelectorAll('[data-pick]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pick === pickTab));
   $('fSideWrap').hidden = pickTab !== 'live';
   $('fDirWrap').hidden = pickTab !== 'trend';
-  $('fSetupWrap').hidden = pickTab === 'sells' || pickTab === 'trend' || pickTab === 'pos';
+  $('fSetupWrap').hidden = pickTab === 'sells' || pickTab === 'trend';
   $('fReset').hidden = !filtersOn();
   let side, isLive = pickTab === 'live', emptyT, emptyS;
   const foot = $('pickFoot');
   foot.hidden = true;
   if (pickTab === 'live') {
     emptyT = 'No new setups yet today'; emptyS = 'New matches from the 15-minute checks show up here with the time they were found.';
-  } else if (pickTab === 'pos') {
-    emptyT = 'No momentum list yet'; emptyS = 'It is built by the 8:00 AM ET scan on trading days.';
   } else if (pickTab === 'trend') {
     emptyT = T ? 'Nothing clears the bar right now' : 'No Top 10 yet';
     emptyS = T ? 'Only stocks whose combined score clears the tested minimum are listed. Fewer than 10 is normal.' : 'The lists are built by the 15-minute scan during market hours (9:30 AM to 4:00 PM ET).';
@@ -615,9 +578,9 @@ function renderPicks() {
   const base = baseRows().length;
   if (base && !list.length) { emptyT = 'No matches'; emptyS = 'Nothing here matches your search or filters.'; }
   const shown = list.slice(0, 120);
-  const note = pickTab === 'trend' && T ? trendNote(T) : pickTab === 'pos' && SCAN.position ? posNote(SCAN.position) : '';
+  const note = pickTab === 'trend' && T ? trendNote(T) : '';
   $('pickList').innerHTML = shown.length
-    ? note + shown.map((c, i) => pickTab === 'pos' ? posRow(c) : pickTab === 'trend' ? trendRow(c, shown[i - 1]) : pickRow(c, isLive ? c.side : side, isLive)).join('')
+    ? note + shown.map((c, i) => pickTab === 'trend' ? trendRow(c, shown[i - 1]) : pickRow(c, isLive ? c.side : side, isLive)).join('')
       + (list.length > shown.length ? `<li class="empty small">Showing the top ${shown.length} of ${list.length}.</li>` : '')
     : note + `<li class="empty"><b>${emptyT}</b>${emptyS}</li>`;
   const key = list.map(c => c.symbol).join(',');
