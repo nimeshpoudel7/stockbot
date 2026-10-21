@@ -174,6 +174,63 @@ def summary(store) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- plan
+HOLD_CAL_DAYS = 91            # ~63 trading days
+
+
+def plan(store, symbol: str) -> dict | None:
+    """When to buy / when to sell for one stock under this strategy.
+
+    The tested rule: buy when a stock enters the top 10 (equal money),
+    hold ~3 months (63 trading days), then sell. While SPY is below its
+    200-day no NEW buys are made (in the backtest open positions were kept
+    to their 3 months; selling them early is the safer option). A close
+    below the stock's own 200-day is an extra safety exit that was NOT in
+    the backtest. Returns None when the stock was never on the list."""
+    symbol = symbol.upper()
+    try:
+        data = json.loads(store.poller_get(LIST_KEY) or "null")
+    except (ValueError, TypeError):
+        data = None
+    rows = (data or {}).get("picks") or (data or {}).get("watch") or []
+    cur = next((r for r in rows if r["symbol"] == symbol), None)
+    entries = [e for e in _load(store) if e["symbol"] == symbol]
+    last = max(entries, key=lambda e: e["date"]) if entries else None
+    if not cur and not last:
+        return None
+    risk_off = bool((data or {}).get("risk_off"))
+    out = {"symbol": symbol, "risk_off": risk_off, "on_list": bool(cur) and not risk_off,
+           "rank": cur["rank"] if cur else None, "row": cur,
+           "list_date": (data or {}).get("date")}
+    if last:
+        # the current streak: monthly re-logs while it stays on the list
+        ds = sorted(e["date"] for e in entries)
+        start = ds[-1]
+        for prev, nxt in zip(reversed(ds[:-1]), reversed(ds[1:])):
+            if (dt.date.fromisoformat(nxt) - dt.date.fromisoformat(prev)).days > 40:
+                break
+            start = prev
+        first = next(e for e in entries if e["date"] == start)
+        # each month on the list is a fresh 3-month tranche, so the sell
+        # date is 3 months after the LAST month it was on the list
+        sell_by = dt.date.fromisoformat(last["date"]) + dt.timedelta(days=HOLD_CAL_DAYS)
+        today = dt.datetime.now(ET).date()
+        out.update({"listed_on": start, "entry_price": first["price"],
+                    "last_listed": last["date"], "sell_by": sell_by.isoformat(),
+                    "days_left": (sell_by - today).days,
+                    "result_1m": first.get("r21"), "result_3m": first.get("r63")})
+    # one clear action
+    if risk_off:
+        out["action"] = "hold_no_new"
+    elif last and out["days_left"] <= 0:
+        out["action"] = "sell_due" if not cur else "renew"
+    elif cur:
+        out["action"] = "buy" if not last or last["date"] == out["list_date"] else "hold"
+    else:
+        out["action"] = "dropped"
+    return out
+
+
 # ---------------------------------------------------------------- job
 def run(store, rest, spy_closes=None) -> dict | None:
     """Build today's list, log new picks, grade old ones. Never raises."""

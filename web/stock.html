@@ -145,6 +145,17 @@
 .scan-diff th{font-weight:500;color:var(--mute)}
 .scan-diff td.num{font-variant-numeric:tabular-nums}
 .hero .last.flash{animation:flash 1s ease}
+.mod-card{margin-top:18px}
+.mod-card .panel-h{display:flex;align-items:center;gap:10px}
+.mp-now{font-size:1rem;color:var(--ink);margin:0 0 14px;max-width:70ch}
+.mp-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.mp-grid{grid-template-columns:1fr}}
+.mp h3{font-size:.92rem;margin:0 0 6px}
+.mp-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:.88rem;color:var(--ink-2)}
+.mp-list b{color:var(--ink);font-weight:600}
+.mp-facts{display:flex;flex-wrap:wrap;gap:8px 24px;margin:16px 0 10px;padding-top:12px;border-top:1px solid var(--line-soft)}
+.mp-kv{display:flex;flex-direction:column;font-size:.8rem;color:var(--mute)}
+.mp-kv b{font-size:1rem;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 @keyframes flash{from{background:var(--amber-soft)}to{background:transparent}}
 details.checked{margin-top:12px;font-size:.86rem}
 details.checked summary{cursor:pointer;color:var(--mute)}
@@ -182,6 +193,8 @@ details.checked li b{color:var(--ink-2);font-weight:500}
       <div class="day" id="hDay"></div>
     </div>
   </section>
+
+  <section class="panel mod-card" id="modPlan" hidden aria-labelledby="mpTitle"></section>
 
   <section class="stats" id="stats" hidden>
     <div class="stat"><div class="k">52-week range</div><div class="range"><i id="rangeDot"></i></div><div class="range-l"><span id="rLo"></span><span id="rPos" class="mute"></span><span id="rHi"></span></div></div>
@@ -267,6 +280,10 @@ details.checked li b{color:var(--ink-2);font-weight:500}
 {{COMMON_JS}}
 const SYM = (QS.get('symbol') || '').toUpperCase();
 $('backLink').href = homeUrl();
+if (QS.get('from') === 'moderate') {
+  $('backLink').href = homeUrl() + '#moderate';
+  $('backLink').lastChild.textContent = 'Moderate risk';
+}
 let CH = null, chartTf = '1y';
 initTheme('themeBtn', () => {
   if (CH) CH.theme();
@@ -696,6 +713,59 @@ async function refreshLive() {
   loadAnalysis(true);
 }
 
+// ---------------------------------------------------------------- moderate-risk plan
+const MP_ACTION = {
+  buy: ['Buy', 'good', p => `It is on today's Moderate-risk list (#${p.rank} of 10). Buy it with an equal share of the money you set aside for this strategy (one tenth each).`],
+  hold: ['Hold', '', p => `Keep holding: it is still in the top 10 (#${p.rank}).`],
+  renew: ['Hold', '', p => `Its 3 months are up, but it is still in the top 10 (#${p.rank}), so keep holding. The tested rule simply re-buys it.`],
+  sell_due: ['Sell', 'bad', p => `Its 3 months are up and it is no longer in the top 10. Sell it.`],
+  dropped: ['Off the list', 'warn', p => `It left the top 10. If you own it, sell by ${fmtDay(p.sell_by)} (3 months after it was last on the list), or earlier if a sell rule below triggers.`],
+  hold_no_new: ['Cash mode', 'warn', p => `SPY is below its 200-day average, so make no new buys. If you already own it, the backtest held it to its 3-month date (${fmtDay(p.sell_by)}); selling now is the safer choice.`],
+};
+function fmtDay(d) { return d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : '—'; }
+async function loadModPlan() {
+  let r;
+  try { r = await api('GET', '/api/moderate/' + encodeURIComponent(SYM)); } catch (e) { return; }
+  const p = r && r.plan;
+  const box = $('modPlan');
+  if (!p) { box.hidden = true; return; }
+  const [label, cls, txt] = MP_ACTION[p.action] || ['—', '', () => ''];
+  const row = p.row || {}, last = STOCK && STOCK.price ? STOCK.price.last : null;
+  const since = p.entry_price && last ? (last - p.entry_price) / p.entry_price * 100 : null;
+  const sma200 = row.sma200, below200 = sma200 && last ? last < sma200 : false;
+  const kv = (k, v) => `<div class="mp-kv"><span>${k}</span><b>${v}</b></div>`;
+  box.hidden = false;
+  box.innerHTML = `<div class="panel-h"><h2 id="mpTitle">Moderate-risk plan</h2><span class="pill ${cls}">${label}</span></div>
+    <div class="panel-b mp">
+      <p class="mp-now">${txt(p)}</p>
+      <div class="mp-grid">
+        <div>
+          <h3>When to buy</h3>
+          <ul class="mp-list">
+            <li>When it enters the top 10 at the 8:00 AM scan. The list is re-checked once a month; there is no need to trade daily.</li>
+            <li>Only while SPY is above its 200-day average${p.risk_off ? ' <b>(not now: cash mode)</b>' : ' (true now)'}.</li>
+            ${row.ret1m > 20 ? `<li>It rose ${row.ret1m.toFixed(0)}% last month. Waiting for a pullback is an option (not tested).</li>` : ''}
+          </ul>
+        </div>
+        <div>
+          <h3>When to sell</h3>
+          <ul class="mp-list">
+            <li><b>Time:</b> about 3 months after the last month it was on the list${p.sell_by ? ` — <b>${fmtDay(p.sell_by)}</b>${p.days_left != null ? ` (${p.days_left > 0 ? p.days_left + ' days left' : 'due now'})` : ''}` : ''}. This is the tested rule.</li>
+            <li><b>Safety:</b> a daily close below its 200-day average${sma200 ? ` (${fmtP(sma200)}${below200 ? ', <b>triggered</b>' : ''})` : ''}. Extra protection, not in the backtest.</li>
+            <li><b>Market:</b> if SPY falls below its 200-day, stop new buys; selling early is the safer choice.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mp-facts">
+        ${p.listed_on ? kv('On the list since', fmtDay(p.listed_on)) : ''}
+        ${p.entry_price ? kv('Price then', fmtP(p.entry_price)) : ''}
+        ${since != null ? kv('Since then', `<span class="${since >= 0 ? 'up' : 'down'}">${fmtPct(since, 1)}</span>`) : ''}
+        ${row.mom12 != null ? kv('12-month gain', fmtPct(row.mom12, 0)) : ''}
+      </div>
+      <p class="mute small">The <b>Scanner verdict</b> below is the Today page's 5-day signal, a different short-term strategy. Strong momentum stocks often look "overbought" there; that is not a sell signal for this plan. Not financial advice.</p>
+    </div>`;
+}
+
 async function load() {
   document.title = SYM ? SYM + ' — Stockbot' : 'Stock — Stockbot';
   if (!SYM) { $('hName').textContent = 'No stock chosen. Go back and tap a symbol.'; return; }
@@ -721,6 +791,7 @@ async function load() {
   renderSent(d.sentiment || {});
   drawChart();
   loadAnalysis();
+  loadModPlan();
   setInterval(pollPrice, 5000);       // header + last candle
   setInterval(refreshLive, 60000);    // verdict, levels, indicators, patterns
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { pollPrice(); refreshLive(); } });

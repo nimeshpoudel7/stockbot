@@ -119,3 +119,58 @@ class TestModerateIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestModeratePlan(unittest.TestCase):
+    def _store(self, picks, risk_off=False, log=()):
+        store = Store(":memory:")
+        today = dt.datetime.now(M.ET).date().isoformat()
+        store.poller_set(M.LIST_KEY, json.dumps({
+            "date": today, "risk_off": risk_off,
+            "picks": [] if risk_off else picks, "watch": picks if risk_off else []}))
+        store.poller_set(M.LOG_KEY, json.dumps(list(log)))
+        return store, today
+
+    @staticmethod
+    def _ago(days):
+        return (dt.datetime.now(M.ET).date() - dt.timedelta(days=days)).isoformat()
+
+    def test_new_pick_is_buy_with_sell_date(self):
+        store, today = self._store([{"symbol": "AAA", "rank": 2, "price": 10.0, "sma200": 8.0}])
+        M.record(store, [{"symbol": "AAA", "price": 10.0, "rank": 2, "mom12": 50}], today)
+        p = M.plan(store, "aaa")
+        self.assertEqual((p["action"], p["rank"], p["entry_price"]), ("buy", 2, 10.0))
+        self.assertEqual(p["days_left"], M.HOLD_CAL_DAYS)
+
+    def test_hold_then_dropped_then_sell_due(self):
+        store, _ = self._store([{"symbol": "AAA", "rank": 1, "price": 10.0}],
+                               log=[{"date": self._ago(20), "symbol": "AAA", "price": 9.0}])
+        self.assertEqual(M.plan(store, "AAA")["action"], "hold")
+        store, _ = self._store([], log=[{"date": self._ago(20), "symbol": "AAA", "price": 9.0}])
+        self.assertEqual(M.plan(store, "AAA")["action"], "dropped")
+        store, _ = self._store([], log=[{"date": self._ago(100), "symbol": "AAA", "price": 9.0}])
+        self.assertEqual(M.plan(store, "AAA")["action"], "sell_due")
+
+    def test_streak_keeps_first_entry_and_extends_sell_date(self):
+        log = [{"date": self._ago(60), "symbol": "AAA", "price": 8.0},
+               {"date": self._ago(29), "symbol": "AAA", "price": 9.0}]
+        store, _ = self._store([{"symbol": "AAA", "rank": 1, "price": 10.0}], log=log)
+        p = M.plan(store, "AAA")
+        self.assertEqual((p["listed_on"], p["entry_price"]), (self._ago(60), 8.0))
+        self.assertEqual(p["days_left"], M.HOLD_CAL_DAYS - 29)
+
+    def test_cash_mode_and_unknown(self):
+        store, _ = self._store([{"symbol": "AAA", "rank": 1, "price": 10.0}], risk_off=True)
+        self.assertEqual(M.plan(store, "AAA")["action"], "hold_no_new")
+        self.assertIsNone(M.plan(store, "ZZZ"))
+
+    def test_api_plan_and_list_enrichment(self):
+        store, today = self._store([{"symbol": "AAA", "rank": 1, "price": 10.0}])
+        M.record(store, [{"symbol": "AAA", "price": 10.0, "rank": 1, "mom12": 50}], today)
+        routes = {r.path: r.endpoint for r in dashboard.create_app(store, MagicMock(), {}, {}).routes
+                  if hasattr(r, "path")}
+        self.assertEqual(routes["/api/moderate/{symbol}"]("AAA")["plan"]["action"], "buy")
+        self.assertEqual(routes["/api/moderate"]()["list"]["picks"][0]["action"], "buy")
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException):
+            routes["/api/moderate/{symbol}"]("A1")

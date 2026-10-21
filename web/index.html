@@ -953,12 +953,12 @@ function renderModerate() {
     : rows.length ? rows.map(r => {
         const q = MODP[r.symbol], px = q && q.price != null ? q.price : r.price, dp = q ? q.day_pct : null;
         const since = r.price ? (px - r.price) / r.price * 100 : null;
-        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}">
+        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}&from=moderate">
           <div class="sym"><span class="tick" style="font-size:1.2rem">${esc(r.symbol)}</span><div class="rank">#${r.rank} of 10</div></div>
           <div class="main"><div class="facts"><span>12-month <b>${fmtPct(r.mom12, 0)}</b></span><span>last month ${fmtPct(r.ret1m, 1)}</span><span>${r.from_high >= -1 ? 'at its 52-week high' : fmtPct(r.from_high, 0) + ' from its high'}</span></div>
             ${(r.notes || []).map(n => `<div class="warn-line">${esc(n)}</div>`).join('')}</div>
           <div class="px"><b class="num">${fmtP(px)}</b>${dp != null ? `<div class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</div>` : ''}${since != null && q ? `<div class="mute small">${fmtPct(since, 1)} since list</div>` : ''}</div>
-          <div class="exit">Safety exit (not in the backtest): a close below the 200-day, ${fmtP(r.sma200)}.</div>
+          <div class="exit">${r.sell_by ? `Listed ${esc(r.listed_on)} at ${fmtP(r.entry_price)} · planned sell ~${esc(r.sell_by)} · ` : ''}safety exit below the 200-day, ${fmtP(r.sma200)}. Tap for the full buy/sell plan.</div>
         </a></li>`;
       }).join('')
     : '<li class="empty"><b>No stock qualifies today</b>None of the S&amp;P 500 passed the uptrend rule.</li>';
