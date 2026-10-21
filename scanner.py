@@ -1820,6 +1820,12 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         # separate moderate-risk strategy (own data + list; never raises)
         import moderate
         moderate.run(store, rest, spy)
+        # separate high-conviction strategy (own list; never raises)
+        import conviction
+        conviction.run(store, rest, spy)
+        # separate 'Leaders 3 months' strategy (own list; never raises)
+        import leaders3m
+        leaders3m.run(store, rest, spy)
     return {"buys": buys, "sells": sells}
 
 

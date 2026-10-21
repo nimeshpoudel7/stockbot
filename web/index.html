@@ -167,6 +167,7 @@ details.more[open] summary{margin-bottom:14px}
 .mod-stats .kv{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line-soft);padding-bottom:6px}
 .mod-stats .kv b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 .mod-stats .note{font-size:.82rem;color:var(--mute)}
+.mod-long{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding-top:12px;border-top:2px solid var(--line)}
 .mod-row{display:grid;grid-template-columns:118px minmax(0,1fr) auto;gap:6px 18px;padding:14px 18px;border-bottom:1px solid var(--line-soft);text-decoration:none;color:inherit}
 .mod-row:hover{background:var(--panel-2)}
 .mod-row .rank{font-size:.78rem;color:var(--mute)}
@@ -191,6 +192,8 @@ details.more[open] summary{margin-bottom:14px}
       <button class="tab" role="tab" data-view="alerts" aria-selected="false">Alerts</button>
       <button class="tab" role="tab" data-view="research" aria-selected="false">Research</button>
       <button class="tab" role="tab" data-view="moderate" aria-selected="false">Moderate risk</button>
+      <button class="tab" role="tab" data-view="conviction" aria-selected="false">High conviction</button>
+      <button class="tab" role="tab" data-view="leaders" aria-selected="false">Leaders 3 months</button>
     </nav>
     <span class="spacer"></span>
     <span class="mood" id="mood" data-regime=""><span class="mood-dot"></span><span class="mood-text">Market: checking…</span></span>
@@ -379,6 +382,78 @@ details.more[open] summary{margin-bottom:14px}
     </aside>
   </div>
 </section>
+<!-- ================= HIGH CONVICTION ================= -->
+<section id="view-conviction" data-view-panel="conviction" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>High conviction</h1>
+      <p class="mute">A separate, more concentrated strategy: only the 5 strongest S&amp;P 500 leaders that are still near their highs, held about 3 months. Higher return and precision than Moderate risk in the backtest, but bigger swings with only 5 stocks. It does not change any other tab.</p>
+    </div>
+    <span class="mute small" id="convWhen"></span>
+  </div>
+  <div class="mod-grid">
+    <div class="panel">
+      <div class="panel-h"><h2>Current picks</h2><span class="mute small" id="convCount"></span></div>
+      <div class="mod-banner" id="convBanner" hidden></div>
+      <ul class="pick-list" id="convList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
+    </div>
+    <aside class="mod-side">
+      <div class="panel">
+        <div class="panel-h"><h2>The rules</h2></div>
+        <ol class="mod-rules">
+          <li>Only S&amp;P 500 stocks above their 50- and 200-day averages and within 10% of their 52-week high.</li>
+          <li>Rank by the 12-month gain, skipping the latest month. Take the top 5.</li>
+          <li>Put equal money in each. Hold about 3 months, re-check once a month.</li>
+          <li>Go to cash while SPY is below its 200-day average.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Backtest</h2></div>
+        <div class="mod-stats" id="convBacktest"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Live scorecard</h2></div>
+        <div class="mod-stats" id="convCard"></div>
+      </div>
+    </aside>
+  </div>
+</section>
+<!-- ================= LEADERS 3 MONTHS ================= -->
+<section id="view-leaders" data-view-panel="leaders" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>Leaders 3 months</h1>
+      <p class="mute">The 10 S&amp;P 500 stocks in an uptrend that rose the most over the last 3 months, held about 3 months. The only strategy here that beat SPY over a 10-year test (about +22% a year vs +15.5%), but it can lag SPY for a year or two. It does not change any other tab.</p>
+    </div>
+    <span class="mute small" id="leadWhen"></span>
+  </div>
+  <div class="mod-grid">
+    <div class="panel">
+      <div class="panel-h"><h2>Current picks</h2><span class="mute small" id="leadCount"></span></div>
+      <div class="mod-banner" id="leadBanner" hidden></div>
+      <ul class="pick-list" id="leadList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
+    </div>
+    <aside class="mod-side">
+      <div class="panel">
+        <div class="panel-h"><h2>The rules</h2></div>
+        <ol class="mod-rules">
+          <li>Only S&amp;P 500 stocks above their 50- and 200-day averages.</li>
+          <li>Rank by the gain over the last 3 months. Take the top 10.</li>
+          <li>Once a month, buy that month's new names with equal money. Hold each about 3 months.</li>
+          <li>No cash rule: switching to cash when SPY is weak made this one worse in the 10-year test.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Backtest</h2></div>
+        <div class="mod-stats" id="leadBacktest"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Live scorecard</h2></div>
+        <div class="mod-stats" id="leadCard"></div>
+      </div>
+    </aside>
+  </div>
+</section>
 </main>
 
 <nav class="bottomnav" role="tablist" aria-label="Sections">
@@ -386,6 +461,8 @@ details.more[open] summary{margin-bottom:14px}
   <button class="tab" role="tab" data-view="alerts" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Alerts</button>
   <button class="tab" role="tab" data-view="research" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-3 3 2 5-6"/></svg>Research</button>
   <button class="tab" role="tab" data-view="moderate" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>Moderate</button>
+  <button class="tab" role="tab" data-view="conviction" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>Conviction</button>
+  <button class="tab" role="tab" data-view="leaders" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4V10H4zM10 20h4V4h-4zM16 20h4v-7h-4z"/></svg>Leaders</button>
 </nav>
 
 <script>
@@ -393,7 +470,7 @@ details.more[open] summary{margin-bottom:14px}
 
 // ------------------------------------------------------------------ views
 let BOOTED = false;
-const VIEWS = ['today', 'alerts', 'research', 'moderate'];
+const VIEWS = ['today', 'alerts', 'research', 'moderate', 'conviction', 'leaders'];
 function showView(v, push) {
   if (!VIEWS.includes(v)) v = 'today';
   document.querySelectorAll('[data-view-panel]').forEach(p => p.hidden = p.dataset.viewPanel !== v);
@@ -401,6 +478,8 @@ function showView(v, push) {
   if (push) history.replaceState(null, '', '#' + v + (location.search ? '' : ''));
   if (v === 'research' && BOOTED) loadResearch();
   if (v === 'moderate' && BOOTED) loadModerate();
+  if (v === 'conviction' && BOOTED) loadConviction();
+  if (v === 'leaders' && BOOTED) loadLeaders();
   if (v === 'today' && CH) setTimeout(() => CH.chart.timeScale().fitContent(), 0);
   window.scrollTo({top: 0});
 }
@@ -969,10 +1048,128 @@ function renderModerate() {
       + kv('Average per 3-month trade', fmtPct(t.avg_trade, 1)) + kv('Per year', fmtPct(t.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.spy_year_test, 0)})</span>`)
       + kv('Worst drop', '−' + t.maxdd.toFixed(0) + '%')
       + `<div class="note">Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</div>`
-      + `<div class="note"><b>${esc(B.expect)}</b> The test is short (about 2.5 years, mostly a rising market) and stocks removed from the index are missing. Not financial advice.</div>`;
+      + (B.long ? `<div class="mod-long"><div class="note"><b>10-year check</b> (${esc(B.long.years)}, ${B.long.trades} trades, including the 2018, 2020 and 2022 sell-offs)</div>`
+          + kv('Trades that ended up', B.long.hit.toFixed(0) + '%')
+          + kv('Per year', fmtPct(B.long.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.long.spy_year, 0)})</span>`)
+          + kv('Worst drop', '−' + B.long.maxdd.toFixed(0) + '%')
+          + `<div class="note">Never-seen years ${esc(B.long.unseen.period)}: ${fmtPct(B.long.unseen.year, 0)} a year vs SPY ${fmtPct(B.long.unseen.spy_year, 0)}. Bad years: ${esc(B.long.bad_years)}.</div></div>` : '')
+      + `<div class="note"><b>${esc(B.expect)}</b> The short test above was the period the rule was picked on; the 10-year check is the fairer number. Not financial advice.</div>`;
   }
   const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   $('modCard').innerHTML = SC && SC.picks
+    ? `<div class="note">Every new pick since ${esc(SC.since)} is logged at its price and checked later.</div>`
+      + kv('Picks logged', SC.picks) + kv('Up after 1 month', SC.n21 ? `${SC.hit21.toFixed(0)}% of ${SC.n21} (avg ${fmtPct(SC.avg21, 1)})` : 'waiting')
+      + kv('Up after 3 months', SC.n63 ? `${SC.hit63.toFixed(0)}% of ${SC.n63} (avg ${fmtPct(SC.avg63, 1)})` : 'waiting')
+    : '<div class="note">Starts with the first morning scan: each pick is logged and checked 1 and 3 months later.</div>';
+}
+
+// ------------------------------------------------------------------ high conviction
+let CONV = null, CONVP = {};
+async function loadConviction() {
+  try { CONV = await api('GET', '/api/conviction'); } catch (e) { $('convList').innerHTML = `<li class="empty"><b>Could not load</b>${esc(e.message)}</li>`; return; }
+  renderConviction(); refreshConvPrices();
+}
+async function refreshConvPrices() {
+  const L = CONV && CONV.list, rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  if (!rows.length || $('view-conviction').hidden || document.hidden) return;
+  try { CONVP = await api('GET', '/api/prices?symbols=' + rows.map(r => r.symbol).join(',')); } catch (e) { return; }
+  renderConviction();
+}
+function renderConviction() {
+  const L = CONV && CONV.list, B = CONV && CONV.backtest, SC = CONV && CONV.scorecard;
+  $('convWhen').textContent = L && L.ts ? `Updated with the morning scan · ${etTime(L.ts, {weekday: 'short', month: 'short', day: 'numeric'})}` : '';
+  const rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  $('convCount').textContent = L ? (L.risk_off ? 'Cash mode' : `${rows.length} stocks · equal money in each (one fifth)`) : '';
+  const ban = $('convBanner');
+  ban.hidden = !(L && L.risk_off);
+  ban.innerHTML = '<b>Cash mode.</b> SPY is below its 200-day average, so the rule holds no stocks. These are the names it would buy once SPY recovers.';
+  $('convList').innerHTML = !L
+    ? '<li class="empty"><b>No list yet</b>It is built by the 8:00 AM ET scan on trading days.</li>'
+    : rows.length ? rows.map(r => {
+        const q = CONVP[r.symbol], px = q && q.price != null ? q.price : r.price, dp = q ? q.day_pct : null;
+        const since = r.price ? (px - r.price) / r.price * 100 : null;
+        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}&from=conviction">
+          <div class="sym"><span class="tick" style="font-size:1.2rem">${esc(r.symbol)}</span><div class="rank">#${r.rank} of 5</div></div>
+          <div class="main"><div class="facts"><span>12-month <b>${fmtPct(r.mom12, 0)}</b></span><span>last month ${fmtPct(r.ret1m, 1)}</span><span>${r.from_high >= -1 ? 'at its 52-week high' : fmtPct(r.from_high, 0) + ' from its high'}</span></div>
+            ${(r.notes || []).map(n => `<div class="warn-line">${esc(n)}</div>`).join('')}</div>
+          <div class="px"><b class="num">${fmtP(px)}</b>${dp != null ? `<div class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</div>` : ''}${since != null && q ? `<div class="mute small">${fmtPct(since, 1)} since list</div>` : ''}</div>
+          <div class="exit">${r.sell_by ? `Listed ${esc(r.listed_on)} at ${fmtP(r.entry_price)} · planned sell ~${esc(r.sell_by)} · ` : ''}safety exit below the 200-day, ${fmtP(r.sma200)}. Tap for the full buy/sell plan.</div>
+        </a></li>`;
+      }).join('')
+    : '<li class="empty"><b>No stock qualifies today</b>No S&amp;P 500 stock is in an uptrend and within 10% of its high right now.</li>';
+  if (B) {
+    const t = B.test, r = B.train, kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    $('convBacktest').innerHTML = `<div class="note">Unseen test period ${esc(B.test_period)}</div>`
+      + kv('Trades that ended up', t.hit.toFixed(0) + '%') + kv('Monthly batches up', t.month_hit.toFixed(0) + '%')
+      + kv('Average per 3-month trade', fmtPct(t.avg_trade, 1)) + kv('Per year', fmtPct(t.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.spy_year_test, 0)})</span>`)
+      + kv('Worst drop', '−' + t.maxdd.toFixed(0) + '%')
+      + kv('Worst single trade', fmtPct(t.worst, 0))
+      + (B.moderate_test ? `<div class="note">Moderate risk on the same test: ${B.moderate_test.hit.toFixed(0)}% of trades up, ${fmtPct(B.moderate_test.year, 0)} a year.</div>` : '')
+      + (B.periods ? `<div class="note">By period (trades up · per year): ${B.periods.map(x => `${esc(x[0])}: ${x[1].toFixed(0)}% · ${fmtPct(x[2], 0)}`).join('; ')}.</div>` : '')
+      + `<div class="note">Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</div>`
+      + (B.long ? `<div class="mod-long"><div class="note"><b>10-year check</b> (${esc(B.long.years)}, ${B.long.trades} trades, including the 2018, 2020 and 2022 sell-offs)</div>`
+          + kv('Trades that ended up', B.long.hit.toFixed(0) + '%')
+          + kv('Per year', fmtPct(B.long.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.long.spy_year, 0)})</span>`)
+          + kv('Worst drop', '−' + B.long.maxdd.toFixed(0) + '%')
+          + `<div class="note">Never-seen years ${esc(B.long.unseen.period)}: ${fmtPct(B.long.unseen.year, 0)} a year vs SPY ${fmtPct(B.long.unseen.spy_year, 0)}. Bad years: ${esc(B.long.bad_years)}.</div></div>` : '')
+      + `<div class="note"><b>${esc(B.expect)}</b> The short test above was the period the rule was picked on; the 10-year check is the fairer number. Not financial advice.</div>`;
+  }
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  $('convCard').innerHTML = SC && SC.picks
+    ? `<div class="note">Every new pick since ${esc(SC.since)} is logged at its price and checked later.</div>`
+      + kv('Picks logged', SC.picks) + kv('Up after 1 month', SC.n21 ? `${SC.hit21.toFixed(0)}% of ${SC.n21} (avg ${fmtPct(SC.avg21, 1)})` : 'waiting')
+      + kv('Up after 3 months', SC.n63 ? `${SC.hit63.toFixed(0)}% of ${SC.n63} (avg ${fmtPct(SC.avg63, 1)})` : 'waiting')
+    : '<div class="note">Starts with the first morning scan: each pick is logged and checked 1 and 3 months later.</div>';
+}
+
+// ------------------------------------------------------------------ leaders 3 months
+let LEAD = null, LEADP = {};
+async function loadLeaders() {
+  try { LEAD = await api('GET', '/api/leaders3m'); } catch (e) { $('leadList').innerHTML = `<li class="empty"><b>Could not load</b>${esc(e.message)}</li>`; return; }
+  renderLeaders(); refreshLeadPrices();
+}
+async function refreshLeadPrices() {
+  const L = LEAD && LEAD.list, rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  if (!rows.length || $('view-leaders').hidden || document.hidden) return;
+  try { LEADP = await api('GET', '/api/prices?symbols=' + rows.map(r => r.symbol).join(',')); } catch (e) { return; }
+  renderLeaders();
+}
+function renderLeaders() {
+  const L = LEAD && LEAD.list, B = LEAD && LEAD.backtest, SC = LEAD && LEAD.scorecard;
+  $('leadWhen').textContent = L && L.ts ? `Updated with the morning scan · ${etTime(L.ts, {weekday: 'short', month: 'short', day: 'numeric'})}` : '';
+  const rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  $('leadCount').textContent = L ? (L.risk_off ? 'Cash mode' : `${rows.length} stocks · equal money in each (one tenth of each monthly batch)`) : '';
+  const ban = $('leadBanner');
+  ban.hidden = !(L && L.risk_off);
+  ban.innerHTML = '<b>Cash mode.</b> SPY is below its 200-day average, so the rule holds no stocks. These are the names it would buy once SPY recovers.';
+  $('leadList').innerHTML = !L
+    ? '<li class="empty"><b>No list yet</b>It is built by the 8:00 AM ET scan on trading days.</li>'
+    : rows.length ? rows.map(r => {
+        const q = LEADP[r.symbol], px = q && q.price != null ? q.price : r.price, dp = q ? q.day_pct : null;
+        const since = r.price ? (px - r.price) / r.price * 100 : null;
+        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}&from=leaders">
+          <div class="sym"><span class="tick" style="font-size:1.2rem">${esc(r.symbol)}</span><div class="rank">#${r.rank} of 10</div></div>
+          <div class="main"><div class="facts"><span>3-month <b>${fmtPct(r.ret3m, 0)}</b></span><span>12-month ${fmtPct(r.mom12, 0)}</span><span>last month ${fmtPct(r.ret1m, 1)}</span><span>${r.from_high >= -1 ? 'at its 52-week high' : fmtPct(r.from_high, 0) + ' from its high'}</span></div>
+            ${(r.notes || []).map(n => `<div class="warn-line">${esc(n)}</div>`).join('')}</div>
+          <div class="px"><b class="num">${fmtP(px)}</b>${dp != null ? `<div class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</div>` : ''}${since != null && q ? `<div class="mute small">${fmtPct(since, 1)} since list</div>` : ''}</div>
+          <div class="exit">${r.sell_by ? `Listed ${esc(r.listed_on)} at ${fmtP(r.entry_price)} · planned sell ~${esc(r.sell_by)} · ` : ''}safety exit below the 200-day, ${fmtP(r.sma200)}. Tap for the full buy/sell plan.</div>
+        </a></li>`;
+      }).join('')
+    : '<li class="empty"><b>No stock qualifies today</b>No S&amp;P 500 stock is in an uptrend right now.</li>';
+  if (B && B.long) {
+    const L = B.long, kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    $('leadBacktest').innerHTML = `<div class="note">10 years, ${esc(L.years)}, ${L.trades.toLocaleString('en-US')} trades, real S&amp;P 500 members on each date</div>`
+      + kv('Trades that ended up', L.hit.toFixed(0) + '%') + kv('Monthly batches up', L.batch_hit.toFixed(0) + '%')
+      + kv('Average per 3-month trade', fmtPct(L.avg_trade, 1))
+      + kv('Per year', fmtPct(L.year, 0) + ` <span class="mute">(SPY ${fmtPct(L.spy_year, 0)})</span>`)
+      + kv('Worst portfolio drop', '−' + L.maxdd.toFixed(0) + `% <span class="mute">(SPY −${L.spy_maxdd.toFixed(0)}%)</span>`)
+      + kv('Worst single trade', fmtPct(L.worst, 0)) + kv('Years beating SPY', esc(L.beat_years))
+      + `<div class="note">By year (rule vs SPY): ${B.by_year.map(y => `${y[0]} ${fmtPct(y[1], 0)} vs ${fmtPct(y[2], 0)}`).join(' · ')}</div>`
+      + `<div class="note"><b>Stress tests passed:</b> ${B.checks.map(esc).join('; ')}.</div>`
+      + `<div class="note"><b>${esc(B.expect)}</b> Not financial advice.</div>`;
+  }
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  $('leadCard').innerHTML = SC && SC.picks
     ? `<div class="note">Every new pick since ${esc(SC.since)} is logged at its price and checked later.</div>`
       + kv('Picks logged', SC.picks) + kv('Up after 1 month', SC.n21 ? `${SC.hit21.toFixed(0)}% of ${SC.n21} (avg ${fmtPct(SC.avg21, 1)})` : 'waiting')
       + kv('Up after 3 months', SC.n63 ? `${SC.hit63.toFixed(0)}% of ${SC.n63} (avg ${fmtPct(SC.avg63, 1)})` : 'waiting')
@@ -991,6 +1188,10 @@ initTheme('themeBtn', () => { if (CH) CH.theme(); });
   setInterval(refreshPickPrices, 15000);
   if (!$('view-research').hidden) loadResearch();
   if (!$('view-moderate').hidden) loadModerate();
+  if (!$('view-conviction').hidden) loadConviction();
+  if (!$('view-leaders').hidden) loadLeaders();
+  setInterval(refreshLeadPrices, 15000);
+  setInterval(refreshConvPrices, 15000);
   setInterval(refreshModPrices, 15000);
   setInterval(refreshQuotes, 2000);
   setInterval(loadScanner, 60000);
