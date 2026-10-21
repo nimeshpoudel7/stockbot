@@ -19,7 +19,7 @@ import requests
 from fastapi import FastAPI, HTTPException
 
 import chart_analysis
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 import indicators as ind
 from alerts import BAR_TYPES, EVENT_TYPES, TICK_TYPES, describe
@@ -158,8 +158,16 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
     if dashboard_token:
         from fastapi import Request
 
+        # PWA install assets carry no data and no secrets: the manifest
+        # deliberately has no start_url (it defaults to the page the user
+        # installs from, token included) and the icons are public artwork.
+        public_paths = {"/manifest.webmanifest", "/icon-180.png",
+                        "/icon-192.png", "/icon-512.png", "/favicon.ico"}
+
         @app.middleware("http")
         async def token_gate(request: Request, call_next):
+            if request.url.path in public_paths:
+                return await call_next(request)
             tok = request.query_params.get("token")
             if not tok:
                 tok = request.headers.get("x-dashboard-token", "")
@@ -179,6 +187,32 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
     @app.get("/stock", response_class=HTMLResponse)
     def stock_page():
         return STOCK_PAGE
+
+    # ---- PWA install assets (public: no data, no secrets) ---------------
+    @app.get("/manifest.webmanifest")
+    def pwa_manifest():
+        return FileResponse(os.path.join(_WEB, "manifest.webmanifest"),
+                            media_type="application/manifest+json")
+
+    @app.get("/icon-180.png")
+    def pwa_icon_180():
+        return FileResponse(os.path.join(_WEB, "icon-180.png"),
+                            media_type="image/png")
+
+    @app.get("/icon-192.png")
+    def pwa_icon_192():
+        return FileResponse(os.path.join(_WEB, "icon-192.png"),
+                            media_type="image/png")
+
+    @app.get("/icon-512.png")
+    def pwa_icon_512():
+        return FileResponse(os.path.join(_WEB, "icon-512.png"),
+                            media_type="image/png")
+
+    @app.get("/favicon.ico")
+    def pwa_favicon():
+        return FileResponse(os.path.join(_WEB, "icon-192.png"),
+                            media_type="image/png")
 
     # ---- watchlist -----------------------------------------------------
     @app.get("/api/watchlist")
