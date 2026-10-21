@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 import indicators as ind
 from alerts import BAR_TYPES, EVENT_TYPES, TICK_TYPES, describe
-from scanner import (SCAN_MORNING_KEY, SCAN_TOP10_KEY, SCAN_WATCH_KEY,
+from scanner import (SCAN_MORNING_KEY, SCAN_POSITION_KEY, SCAN_TOP10_KEY, SCAN_WATCH_KEY,
                      SCAN_WATCH_LAST_KEY)
 
 import fundamentals
@@ -561,9 +561,9 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             except (ValueError, TypeError):
                 return None
 
-        def _scorecard():
+        def _scorecard(key=scorecard.LOG_KEY, horizons=scorecard.HORIZONS):
             try:
-                return scorecard.summary(store)
+                return scorecard.summary(store, key, horizons)
             except Exception:  # noqa: BLE001 - never breaks the page
                 return None
 
@@ -571,7 +571,10 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 "watch": _poller(SCAN_WATCH_KEY),
                 "watch_last": _poller(SCAN_WATCH_LAST_KEY),
                 "top10": _poller(SCAN_TOP10_KEY),
-                "scorecard": _scorecard()}
+                "scorecard": _scorecard(),
+                "position": _poller(SCAN_POSITION_KEY),
+                "position_scorecard": _scorecard(scorecard.POSITION_KEY,
+                                                 scorecard.POSITION_HORIZONS)}
 
 
     # ---- stock detail ----------------------------------------------------
