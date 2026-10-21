@@ -50,6 +50,16 @@ BACKTEST = {
     # S&P membership incl. later-removed stocks (169 delisted tickers had no
     # price history, so some bias remains). Before 2024-03 = never seen.
     "long": {'years': '2016-10 to 2026-07', 'trades': 960, 'hit': 54.7, 'year': 14.2, 'spy_year': 15.5, 'maxdd': 20.9, 'unseen': {'period': '2016-10 to 2024-02', 'hit': 54.2, 'year': 7.7, 'spy_year': 14.5}, 'bad_years': '2018: -15.5% (SPY +3.3%); 2022: mostly cash, -5.5% (SPY -7.8%)'},
+    # where 3-month trades ended in the 10-year replay (study_long / study_m3):
+    # % change from the buy price at the planned sell date. Profit targets
+    # (+15..+60%) and fixed stops (-10..-30%) were also tested: none beat
+    # simply holding to the sell date, so these are a guide, not targets.
+    "outcomes": {"p10": -17, "p25": -9, "median": 2, "p75": 13, "p90": 26},
+    # study_entry.py (10 years): buying at the next open beat every way of
+    # waiting for a better price — limit orders 1-5% or 0.5-1.5 ATR below,
+    # pullbacks to the 10/20-day average, skipping gap-ups — mainly because
+    # the strongest stocks never dip and get missed
+    "entry": "Buy at the market price as soon as it is on the list (next open).",
     "expect": 'Over 10 years the same rule roughly matched SPY (about +14% a year vs +15.5%), lagged it in 2016-2023 and beat it in 2024-2026. Expect index-like returns with different, sometimes bigger swings.',
 }
 
@@ -82,8 +92,10 @@ def build(rows: list[dict], spy_closes: list[float] | None) -> dict:
                     key=lambda r: r["mom12"], reverse=True)[:TOP_N]
     for k, r in enumerate(ranked, 1):
         r["rank"] = k
-        r["notes"] = ([f"Up {r['ret1m']:.0f}% in the last month: stretched, a pullback entry may be better"]
-                      if r["ret1m"] > 20 else [])
+        # no "wait for a pullback" note: study_entry.py found that waiting for
+        # a dip, limit orders and skipping gap-ups all did WORSE than buying
+        # at the next open, and very stretched picks did not do worse
+        r["notes"] = []
     return {"picks": [] if risk_off else ranked, "watch": ranked if risk_off else [],
             "risk_off": risk_off}
 
@@ -218,6 +230,9 @@ def plan(store, symbol: str) -> dict | None:
         # date is 3 months after the LAST month it was on the list
         sell_by = dt.date.fromisoformat(last["date"]) + dt.timedelta(days=HOLD_CAL_DAYS)
         today = dt.datetime.now(ET).date()
+        oc = BACKTEST.get("outcomes") or {}
+        out["price_guide"] = {k: round(first["price"] * (1 + v / 100), 2) for k, v in oc.items()}
+        out["outcomes"] = oc
         out.update({"listed_on": start, "entry_price": first["price"],
                     "last_listed": last["date"], "sell_by": sell_by.isoformat(),
                     "days_left": (sell_by - today).days,

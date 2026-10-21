@@ -594,7 +594,7 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 except Exception:  # noqa: BLE001
                     pl = {}
                 r.update({k: pl.get(k) for k in ("listed_on", "entry_price", "sell_by",
-                                                  "days_left", "action")})
+                                                  "days_left", "action", "price_guide")})
         return {"list": data, "scorecard": card, "backtest": moderate.BACKTEST}
 
     @app.get("/api/moderate/{symbol}")
@@ -624,7 +624,7 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 except Exception:  # noqa: BLE001
                     pl = {}
                 r.update({k: pl.get(k) for k in ("listed_on", "entry_price", "sell_by",
-                                                  "days_left", "action")})
+                                                  "days_left", "action", "price_guide")})
         return {"list": data, "scorecard": card, "backtest": moderate.BACKTEST}
 
     @app.get("/api/conviction/{symbol}")
@@ -654,7 +654,7 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 except Exception:  # noqa: BLE001
                     pl = {}
                 r.update({k: pl.get(k) for k in ("listed_on", "entry_price", "sell_by",
-                                                  "days_left", "action")})
+                                                  "days_left", "action", "price_guide")})
         return {"list": data, "scorecard": card, "backtest": moderate.BACKTEST}
 
     @app.get("/api/leaders3m/{symbol}")
