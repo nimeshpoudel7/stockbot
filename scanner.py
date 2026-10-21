@@ -183,7 +183,6 @@ import chart_analysis
 import fundamentals
 import regime as regime_mod
 import sentiment
-import momentum
 import scorecard
 import top_picks
 
@@ -227,7 +226,6 @@ WATCH_SEEN_KEY = "scanner_watch_seen"  # {"date": "YYYY-MM-DD", "symbols": [...]
 SCAN_MORNING_KEY = "scanner_morning"  # poller key: ranked lists for the dashboard
 SCAN_WATCH_KEY = "scanner_watch"      # poller key: today's watch matches
 SCAN_WATCH_LAST_KEY = "scanner_watch_last"  # poller key: last watch pass ran
-SCAN_POSITION_KEY = "scanner_position"   # 1-3 month momentum leaders
 SCAN_TOP10_KEY = "scanner_top10"   # live Top-10 BUY / SELL (combined score)
 WATCH_INTERVAL_MIN = 15    # cron cadence of the watch pass (deploy/crontab)
 WATCH_PUSH_MAX = 12        # cap symbols listed in one watch push (4 KB)
@@ -272,7 +270,6 @@ SP500_SNAPSHOT_DATE = "2026-10-19"  # when the fallback list was compiled
 # Membership drifts; refresh_universe() prunes delisted symbols via Alpaca.
 # Full alphabetical constituent list (snapshot; see SP500_SNAPSHOT_DATE).
 SP500_FALLBACK = tuple(sorted(set(
-    "MSFT "  # was missing from the snapshot
     "AAPL ABBV ABT ACGL ACN ADBE ADI ADM ADP ADSK AEE AEP AES AFL AIG AIZ "
     "AJG AKAM ALB ALGN ALL ALLE AMAT AMCR AMD AME AMGN AMP AMT AMZN ANET "
     "ANSS AON AOS APD APH APTV ARE ASML ATO AVB AVGO AVY AWK AXON AXP AZO "
@@ -476,32 +473,6 @@ def refresh_universe(store: Store, rest: AlpacaREST | None = None) -> list[str]:
                "symbols": symbols}
     store.poller_set(UNIVERSE_CACHE_KEY, json.dumps(payload))
     return symbols
-
-
-SP500_MEMBERS_KEY = "sp500_members"
-
-
-def sp500_members(store: Store) -> set[str]:
-    """Current S&P 500 members for the momentum list: Wikipedia / datahub,
-    cached 7 days; the bundled snapshot if both fail."""
-    raw = store.poller_get(SP500_MEMBERS_KEY)
-    if raw:
-        try:
-            data = json.loads(raw)
-            age = time.time() - data["ts"]
-            if age < UNIVERSE_TTL_DAYS * 86400 and len(data["symbols"]) > 400:
-                return set(data["symbols"])
-        except (ValueError, TypeError, KeyError):
-            pass
-    for fetcher in (_fetch_sp500_wikipedia, _fetch_sp500_datahub):
-        try:
-            syms = fetcher()
-        except Exception:  # noqa: BLE001 - network is best-effort
-            syms = None
-        if syms and len(syms) > 400:
-            store.poller_set(SP500_MEMBERS_KEY, json.dumps({"ts": time.time(), "symbols": syms}))
-            return set(syms)
-    return set(SP500_FALLBACK)
 
 
 def get_universe(store: Store, rest: AlpacaREST | None = None) -> list[str]:
@@ -1427,10 +1398,8 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     collector = top_picks.Collector()   # Top-10 BUY / SELL candidates
     try:
         to_grade = scorecard.pending_symbols(store)
-        to_grade_pos = scorecard.pending_symbols(store, scorecard.POSITION_KEY,
-                                                 scorecard.POSITION_HORIZONS)
     except Exception:  # noqa: BLE001
-        to_grade, to_grade_pos = set(), set()
+        to_grade = set()
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
         grade_bars = {}
@@ -1438,7 +1407,7 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
-            if sym in to_grade or sym in to_grade_pos:
+            if sym in to_grade:
                 grade_bars[sym] = bars
             screened += 1
             res = technical_screen(bars, volume_scale=volume_scale,
@@ -1468,8 +1437,6 @@ def watch_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         if grade_bars and not dry_run:
             try:
                 scorecard.grade(store, grade_bars)
-                scorecard.grade(store, grade_bars, scorecard.POSITION_KEY,
-                                scorecard.POSITION_HORIZONS)
             except Exception as e:  # noqa: BLE001
                 log.warning("watch: scorecard grading failed: %s", e)
     # Push-only price floor: sub-$3 matches never reach the phone (and are
@@ -1581,8 +1548,7 @@ def _persist_top10(store: Store, collector, spy) -> float:
             return b / SHORT_BONUS_MAX, rs
         res = top_picks.rank(collector.candidates(), spy=spy,
                              sentiment_fn=lambda s: sentiment.get_sentiment(store, s),
-                             health_fn=health,
-                             earnings_fn=lambda s: earnings_note(store, s))
+                             health_fn=health)
         res.update({"ts": _et_now().isoformat(), "date": _et_today_str()})
         try:
             res["scorecard_new"] = scorecard.record(store, res, _et_today_str())
@@ -1721,21 +1687,12 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
     bear_rows: list[dict] = []
     evaluated = 0
     spy = _spy_closes(rest)
-    sp500 = sp500_members(store)
-    mom_rows: list[dict] = []
     for ci in range(0, len(universe), 100):
         bars_by_sym = rest.daily_bars_multi(universe[ci:ci + 100], days=300)
         for sym in universe[ci:ci + 100]:
             bars = bars_by_sym.get(sym)
             if not bars:
                 continue
-            if sym in sp500:
-                try:
-                    mr = momentum.row(sym, bars)
-                    if mr:
-                        mom_rows.append(mr)
-                except Exception:  # noqa: BLE001 - never breaks the scan
-                    pass
             res = technical_screen(bars, spy_closes=spy)
             if res is None or not passes_liquidity(bars):
                 continue
@@ -1860,21 +1817,7 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         print("\n\n".join(sections) if sections else "(no candidates)")
     if not dry_run:
         _persist_morning(store, bull_rows, bear_rows, buys, sells)
-        _persist_position(store, mom_rows, spy)
     return {"buys": buys, "sells": sells}
-
-
-def _persist_position(store: Store, rows: list[dict], spy) -> None:
-    """Momentum leaders (1-3 month holds) + scorecard log (best-effort)."""
-    try:
-        res = momentum.build(rows, spy)
-        res.update({"ts": _et_now().isoformat(), "date": _et_today_str(),
-                    "backtest": momentum.BACKTEST})
-        store.poller_set(SCAN_POSITION_KEY, json.dumps(res))
-        scorecard.record(store, res, _et_today_str(), key=scorecard.POSITION_KEY,
-                         dedupe_days=30)
-    except Exception as e:  # noqa: BLE001
-        log.warning("scan: could not build momentum list: %s", e)
 
 
 def main() -> None:

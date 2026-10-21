@@ -117,20 +117,9 @@ LABELS = {"setup": "Scanner setup", "chart": "Chart read", "pullback": "Trend pu
 
 OVERLAY_N = 20             # news + health looked up for the best N per side
 
-# Exit plans tested in study_trader.py (chosen on 2024-05..2025-06,
-# judged on 2025-06..2026-10). They raise how often a trade ends green;
-# the average gain per trade stays small.
-EXITS = {
-    "BUY": {"text": "Sell at the first close above the 5-day average, or after 5 trading days.",
-            "test_hit": 59.8, "test_avg": 0.07},
-    "SELL": {"text": "Cover at the first down close, or after 5 trading days.",
-             "test_hit": 63.6, "test_avg": 0.06},
-}
-
 
 def rank(cands: list[dict], *, spy=None, now=None, model=None,
-         sentiment_fn=None, health_fn=None, earnings_fn=None,
-         budget: float = READ_BUDGET_SECS) -> dict:
+         sentiment_fn=None, health_fn=None, budget: float = READ_BUDGET_SECS) -> dict:
     """cands: [{symbol, res (technical_screen), bars}] for liquid stocks.
 
     Returns {"BUY": [...], "SELL": [...], ...} — top 10 per side, best
@@ -143,7 +132,7 @@ def rank(cands: list[dict], *, spy=None, now=None, model=None,
     """
     model = model or load_model()
     t0 = time.monotonic()
-    out = {"exits": EXITS, "model": {s: {"weights": model[s]["weights"], "min_score": model[s]["min_score"],
+    out = {"model": {s: {"weights": model[s]["weights"], "min_score": model[s]["min_score"],
                          "test": model[s].get("test"), "test10": model[s].get("test10"),
                          "test_nobar": model[s].get("test_top10_nobar"),
                          "base_test": model[s].get("base_test"),
@@ -202,12 +191,6 @@ def rank(cands: list[dict], *, spy=None, now=None, model=None,
                     health = max(-1.0, min(1.0, hb)) * HEALTH_W
                 except Exception:  # noqa: BLE001
                     health, hreasons = 0.0, []
-            earn = None
-            if k < OVERLAY_N and earnings_fn:
-                try:
-                    earn = earnings_fn(sym)
-                except Exception:  # noqa: BLE001
-                    earn = None
             parts = dict(parts, news=news, health=health)
             # show the two close-position components as one net line
             parts["close"] = parts.pop("action", 0.0) + parts.pop("weakclose", 0.0)
@@ -218,11 +201,7 @@ def rank(cands: list[dict], *, spy=None, now=None, model=None,
                 "symbol": sym, "side": side, "price": c["res"]["price"],
                 "score": int(round(max(0.0, min(1.0, score)) * 100)),
                 "raw": round(score, 4),
-                # earnings inside the holding window = a coin-flip gap: never
-                # in the tested list, shown below it with the warning
-                "qualifies": score >= model[side]["min_score"] and not earn,
-                "earnings": earn,
-                "exit": EXITS[side]["text"],
+                "qualifies": score >= model[side]["min_score"],
                 "playbook": c["res"].get("playbook") if side == "BUY" else None,
                 "parts": [{"key": key, "label": LABELS[key], "pts": round(v * 100, 1)}
                           for key, v in sorted(parts.items(), key=lambda kv: -abs(kv[1]))
