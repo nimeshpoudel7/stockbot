@@ -1817,6 +1817,9 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         print("\n\n".join(sections) if sections else "(no candidates)")
     if not dry_run:
         _persist_morning(store, bull_rows, bear_rows, buys, sells)
+        # separate moderate-risk strategy (own data + list; never raises)
+        import moderate
+        moderate.run(store, rest, spy)
     return {"buys": buys, "sells": sells}
 
 
