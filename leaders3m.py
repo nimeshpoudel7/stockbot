@@ -52,6 +52,11 @@ BACKTEST = {
                "any day of the month to buy: +18% to +23% a year",
                "random half of the stocks: +16% to +19% a year",
                "10 random uptrend stocks: about +12.5% a year; this rule beat all 200 random tries"],
+    # where 3-month trades ended in the 10-year replay (study_long / study_m3):
+    # % change from the buy price at the planned sell date. Profit targets
+    # (+15..+60%) and fixed stops (-10..-30%) were also tested: none beat
+    # simply holding to the sell date, so these are a guide, not targets.
+    "outcomes": {"p10": -18, "p25": -8, "median": 3, "p75": 15, "p90": 29},
     "expect": "Realistic: roughly +18% to +22% a year over many years, but with flat years "
               "where SPY does better (it lagged in 2018, 2019, 2021, 2023 and 2024). "
               "169 delisted stocks had no price history, so the test is slightly optimistic.",
@@ -186,6 +191,8 @@ def plan(store, symbol: str) -> dict | None:
         # date is 3 months after the LAST month it was on the list
         sell_by = dt.date.fromisoformat(last["date"]) + dt.timedelta(days=HOLD_CAL_DAYS)
         today = dt.datetime.now(ET).date()
+        oc = BACKTEST.get("outcomes") or {}
+        out["price_guide"] = {k: round(first["price"] * (1 + v / 100), 2) for k, v in oc.items()}
         out.update({"listed_on": start, "entry_price": first["price"],
                     "last_listed": last["date"], "sell_by": sell_by.isoformat(),
                     "days_left": (sell_by - today).days,

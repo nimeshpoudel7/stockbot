@@ -153,6 +153,13 @@
 .mp h3{font-size:.92rem;margin:0 0 6px}
 .mp-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:.88rem;color:var(--ink-2)}
 .mp-list b{color:var(--ink);font-weight:600}
+.mp-price{margin-top:16px;padding-top:12px;border-top:1px solid var(--line-soft)}
+.mp-buy{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin:6px 0 12px}
+.mp-buy b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.mp-range{display:flex;flex-direction:column;border:1px solid var(--line-soft);border-radius:var(--radius);overflow:hidden;max-width:520px}
+.mp-rh{font-size:.8rem;color:var(--mute);padding:8px 12px;background:var(--panel-2)}
+.mp-rr{display:grid;grid-template-columns:1fr auto 64px;gap:10px;padding:7px 12px;border-top:1px solid var(--line-soft);font-size:.9rem;align-items:baseline}
+.mp-rr b{font-variant-numeric:tabular-nums}.mp-rr span:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .mp-facts{display:flex;flex-wrap:wrap;gap:8px 24px;margin:16px 0 10px;padding-top:12px;border-top:1px solid var(--line-soft)}
 .mp-kv{display:flex;flex-direction:column;font-size:.8rem;color:var(--mute)}
 .mp-kv b{font-size:1rem;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
@@ -760,6 +767,16 @@ async function loadModPlan() {
           </ul>
         </div>
       </div>
+      ${p.price_guide && p.entry_price ? `<div class="mp-price">
+        <h3>Price guide</h3>
+        <div class="mp-buy"><span>Buy price</span><b>${fmtP(p.entry_price)}</b><span class="mute small">the price when it joined the list (the test bought at the next morning's open)</span></div>
+        <div class="mp-range" role="table" aria-label="Likely price on the sell date">
+          <div class="mp-rh">Likely price on the sell date, ${fmtDay(p.sell_by)} (from 10 years of past trades)</div>
+          ${[['Bad (1 in 10)', 'p10', 'down'], ['Weak (1 in 4)', 'p25', 'down'], ['Typical (middle)', 'median', ''], ['Good (1 in 4)', 'p75', 'up'], ['Great (1 in 10)', 'p90', 'up']]
+            .map(([lbl, k, c]) => `<div class="mp-rr"><span>${lbl}</span><b class="${c}">${fmtP(p.price_guide[k])}</b><span class="mute">${fmtPct((p.price_guide[k] / p.entry_price - 1) * 100, 0)}</span></div>`).join('')}
+        </div>
+        <p class="mute small">There is no fixed sell price: profit targets (+15% to +60%) and stop-losses (−10% to −30%) were tested and every one did worse than simply selling on the date. The safety exit below the 200-day average is optional extra protection.</p>
+      </div>` : ''}
       <div class="mp-facts">
         ${p.listed_on ? kv('On the list since', fmtDay(p.listed_on)) : ''}
         ${p.entry_price ? kv('Price then', fmtP(p.entry_price)) : ''}

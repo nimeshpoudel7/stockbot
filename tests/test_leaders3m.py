@@ -81,3 +81,21 @@ class TestLeadersJob(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPriceGuide(unittest.TestCase):
+    def test_plan_has_price_guide_for_all_three(self):
+        import datetime as dt
+        for mod in (M, CV, L3):
+            store = Store(":memory:")
+            today = dt.datetime.now(mod.ET).date().isoformat()
+            store.poller_set(mod.LIST_KEY, json.dumps({"date": today, "risk_off": False,
+                                                       "picks": [{"symbol": "AAA", "rank": 1, "price": 100.0}], "watch": []}))
+            mod.record(store, [{"symbol": "AAA", "price": 100.0, "rank": 1, "mom12": 50, "ret3m": 20}], today)
+            g = mod.plan(store, "AAA")["price_guide"]
+            oc = mod.BACKTEST["outcomes"]
+            self.assertEqual(g["median"], round(100 * (1 + oc["median"] / 100), 2))
+            self.assertLess(g["p10"], g["p25"])
+            self.assertLess(g["p25"], g["median"])
+            self.assertLess(g["median"], g["p75"])
+            self.assertLess(g["p75"], g["p90"])
