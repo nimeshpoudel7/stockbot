@@ -280,9 +280,12 @@ details.checked li b{color:var(--ink-2);font-weight:500}
 {{COMMON_JS}}
 const SYM = (QS.get('symbol') || '').toUpperCase();
 $('backLink').href = homeUrl();
-if (QS.get('from') === 'moderate') {
-  $('backLink').href = homeUrl() + '#moderate';
-  $('backLink').lastChild.textContent = 'Moderate risk';
+const STRAT = QS.get('from') === 'conviction' ? 'conviction' : 'moderate';
+const STRAT_INFO = {moderate: {name: 'Moderate-risk', tab: 'Moderate risk', n: 10, share: 'one tenth'},
+                    conviction: {name: 'High-conviction', tab: 'High conviction', n: 5, share: 'one fifth'}}[STRAT];
+if (QS.get('from') === 'moderate' || QS.get('from') === 'conviction') {
+  $('backLink').href = homeUrl() + '#' + STRAT;
+  $('backLink').lastChild.textContent = STRAT_INFO.tab;
 }
 let CH = null, chartTf = '1y';
 initTheme('themeBtn', () => {
@@ -715,17 +718,17 @@ async function refreshLive() {
 
 // ---------------------------------------------------------------- moderate-risk plan
 const MP_ACTION = {
-  buy: ['Buy', 'good', p => `It is on today's Moderate-risk list (#${p.rank} of 10). Buy it with an equal share of the money you set aside for this strategy (one tenth each).`],
-  hold: ['Hold', '', p => `Keep holding: it is still in the top 10 (#${p.rank}).`],
-  renew: ['Hold', '', p => `Its 3 months are up, but it is still in the top 10 (#${p.rank}), so keep holding. The tested rule simply re-buys it.`],
-  sell_due: ['Sell', 'bad', p => `Its 3 months are up and it is no longer in the top 10. Sell it.`],
-  dropped: ['Off the list', 'warn', p => `It left the top 10. If you own it, sell by ${fmtDay(p.sell_by)} (3 months after it was last on the list), or earlier if a sell rule below triggers.`],
+  buy: ['Buy', 'good', p => `It is on today's ${STRAT_INFO.name} list (#${p.rank} of ${STRAT_INFO.n}). Buy it with an equal share of the money you set aside for this strategy (${STRAT_INFO.share} each).`],
+  hold: ['Hold', '', p => `Keep holding: it is still in the top ${STRAT_INFO.n} (#${p.rank}).`],
+  renew: ['Hold', '', p => `Its 3 months are up, but it is still in the top ${STRAT_INFO.n} (#${p.rank}), so keep holding. The tested rule simply re-buys it.`],
+  sell_due: ['Sell', 'bad', p => `Its 3 months are up and it is no longer in the top ${STRAT_INFO.n}. Sell it.`],
+  dropped: ['Off the list', 'warn', p => `It left the top ${STRAT_INFO.n}. If you own it, sell by ${fmtDay(p.sell_by)} (3 months after it was last on the list), or earlier if a sell rule below triggers.`],
   hold_no_new: ['Cash mode', 'warn', p => `SPY is below its 200-day average, so make no new buys. If you already own it, the backtest held it to its 3-month date (${fmtDay(p.sell_by)}); selling now is the safer choice.`],
 };
 function fmtDay(d) { return d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : '—'; }
 async function loadModPlan() {
   let r;
-  try { r = await api('GET', '/api/moderate/' + encodeURIComponent(SYM)); } catch (e) { return; }
+  try { r = await api('GET', `/api/${STRAT}/` + encodeURIComponent(SYM)); } catch (e) { return; }
   const p = r && r.plan;
   const box = $('modPlan');
   if (!p) { box.hidden = true; return; }
@@ -735,14 +738,14 @@ async function loadModPlan() {
   const sma200 = row.sma200, below200 = sma200 && last ? last < sma200 : false;
   const kv = (k, v) => `<div class="mp-kv"><span>${k}</span><b>${v}</b></div>`;
   box.hidden = false;
-  box.innerHTML = `<div class="panel-h"><h2 id="mpTitle">Moderate-risk plan</h2><span class="pill ${cls}">${label}</span></div>
+  box.innerHTML = `<div class="panel-h"><h2 id="mpTitle">${STRAT_INFO.name} plan</h2><span class="pill ${cls}">${label}</span></div>
     <div class="panel-b mp">
       <p class="mp-now">${txt(p)}</p>
       <div class="mp-grid">
         <div>
           <h3>When to buy</h3>
           <ul class="mp-list">
-            <li>When it enters the top 10 at the 8:00 AM scan. The list is re-checked once a month; there is no need to trade daily.</li>
+            <li>When it enters the top ${STRAT_INFO.n} at the 8:00 AM scan. The list is re-checked once a month; there is no need to trade daily.</li>
             <li>Only while SPY is above its 200-day average${p.risk_off ? ' <b>(not now: cash mode)</b>' : ' (true now)'}.</li>
             ${row.ret1m > 20 ? `<li>It rose ${row.ret1m.toFixed(0)}% last month. Waiting for a pullback is an option (not tested).</li>` : ''}
           </ul>
