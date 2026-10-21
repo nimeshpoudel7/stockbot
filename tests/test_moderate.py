@@ -46,7 +46,7 @@ class TestModerateList(unittest.TestCase):
                 M.row("DOWN", _trend(80, last_month_pct=-45))]
         out = M.build(rows, [100.0] * 200)
         self.assertEqual([r["symbol"] for r in out["picks"]], ["A", "B"])
-        self.assertTrue(out["picks"][0]["notes"])
+        self.assertEqual(out["picks"][0]["notes"], [])   # no untested "wait for a pullback" advice
         cash = M.build(rows, [100.0] * 199 + [90.0])
         self.assertTrue(cash["risk_off"])
         self.assertEqual(cash["picks"], [])

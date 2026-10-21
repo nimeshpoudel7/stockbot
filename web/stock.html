@@ -767,16 +767,22 @@ async function loadModPlan() {
           </ul>
         </div>
       </div>
-      ${p.price_guide && p.entry_price ? `<div class="mp-price">
+      ${p.outcomes && (last || p.entry_price) ? (() => {
+        const px = last || p.entry_price, oc = p.outcomes;
+        const fresh = p.action === 'buy' || p.action === 'renew';
+        return `<div class="mp-price">
         <h3>Price guide</h3>
-        <div class="mp-buy"><span>Buy price</span><b>${fmtP(p.entry_price)}</b><span class="mute small">the price when it joined the list (the test bought at the next morning's open)</span></div>
+        <div class="mp-buy"><span>${fresh ? 'Buy price' : 'Price now'}</span><b>${fmtP(px)}</b><span class="mute small">${fresh
+          ? 'the market price now. Buy at market, the morning it appears on the list.'
+          : `you would have bought around ${fmtP(p.entry_price)} when it joined the list`}</span></div>
+        <p class="mute small" style="margin:-4px 0 12px">Why buy at market instead of waiting for a lower price: over 10 years, waiting for a dip (limit orders 1–5% lower, a pullback to the 10- or 20-day average) or skipping gap-ups all made <b>less</b> money. Limit orders filled only 71–78% of the time and missed the strongest stocks, which rarely dip.</p>
         <div class="mp-range" role="table" aria-label="Likely price on the sell date">
-          <div class="mp-rh">Likely price on the sell date, ${fmtDay(p.sell_by)} (from 10 years of past trades)</div>
+          <div class="mp-rh">Likely price on the sell date, ${fmtDay(p.sell_by)}, if bought at ${fmtP(fresh ? px : p.entry_price)} (from 10 years of past trades)</div>
           ${[['Bad (1 in 10)', 'p10', 'down'], ['Weak (1 in 4)', 'p25', 'down'], ['Typical (middle)', 'median', ''], ['Good (1 in 4)', 'p75', 'up'], ['Great (1 in 10)', 'p90', 'up']]
-            .map(([lbl, k, c]) => `<div class="mp-rr"><span>${lbl}</span><b class="${c}">${fmtP(p.price_guide[k])}</b><span class="mute">${fmtPct((p.price_guide[k] / p.entry_price - 1) * 100, 0)}</span></div>`).join('')}
+            .map(([lbl, k, c]) => `<div class="mp-rr"><span>${lbl}</span><b class="${c}">${fmtP((fresh ? px : p.entry_price) * (1 + oc[k] / 100))}</b><span class="mute">${fmtPct(oc[k], 0)}</span></div>`).join('')}
         </div>
-        <p class="mute small">There is no fixed sell price: profit targets (+15% to +60%) and stop-losses (−10% to −30%) were tested and every one did worse than simply selling on the date. The safety exit below the 200-day average is optional extra protection.</p>
-      </div>` : ''}
+        <p class="mute small">There is no fixed sell price either: profit targets (+15% to +60%) and stop-losses (−10% to −30%) all did worse than selling on the date. The safety exit below the 200-day average is optional extra protection.</p>
+      </div>`; })() : ''}
       <div class="mp-facts">
         ${p.listed_on ? kv('On the list since', fmtDay(p.listed_on)) : ''}
         ${p.entry_price ? kv('Price then', fmtP(p.entry_price)) : ''}
