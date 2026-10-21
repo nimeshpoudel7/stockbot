@@ -1,19 +1,20 @@
-"""Momentum leaders: the 1-3 month list.
+"""Momentum leaders: the 1-3 month list ("Hold 1-3 mo").
 
 The best-documented stock edge (Jegadeesh & Titman 1993 and decades of
 follow-ups): stocks that rose most over the past 12 months, skipping the
 most recent month, tend to keep outperforming over the next 3-12 months.
 
-Rule (chosen on 2024-03..2025-05, judged on 2025-06..2026-08, see
-study_position.py): rank S&P 500 stocks (>= $3, >= $5M/day) by their
-12-month return excluding the last month; take the top 10; hold about 3
-months; refresh the list monthly.
+Rule (study_position.py, point-in-time S&P 500 membership):
+  - S&P 500 stocks, >= $3, >= $5M/day, above their 50- and 200-day averages
+  - rank by 12-month return excluding the last month; top 10
+  - hold about 3 months, refresh monthly, equal money in each
+  - CASH (empty list) while SPY is below its 200-day average — momentum
+    has its worst crashes in falling markets
 
-On large caps the backtest returned far more than SPY, but it uses
-today's S&P members (stocks that rose INTO the index are included), which
-flatters momentum a lot; on small caps the same rule lost. Momentum also
-crashes in sharp market reversals, so the list warns when SPY is below its
-200-day average. Treat it as a starting watchlist for longer holds.
+Results are in BACKTEST below and on the page, with their caveats: the
+history available here is short (2024-03..2026-08, mostly a bull market)
+and stocks removed from the index are missing. Run
+`study_position.py --fetch --years 8` on the server for a longer check.
 """
 from __future__ import annotations
 
@@ -47,35 +48,36 @@ def row(symbol: str, bars: list[dict]) -> dict | None:
 
 def build(rows: list[dict], spy_closes: list[float] | None) -> dict:
     uniq = {r["symbol"]: r for r in rows if r}       # one row per symbol
-    rows = sorted(uniq.values(), key=lambda r: r["mom12"], reverse=True)
-    top = rows[:TOP_N]
+    risk_off = None
+    if spy_closes and len(spy_closes) >= 200:
+        risk_off = spy_closes[-1] < sum(spy_closes[-200:]) / 200
+    # the tested rule: only stocks in their own uptrend (above 50 & 200-day)
+    trend = [r for r in uniq.values() if r["above50"] and r["above200"]]
+    rows = sorted(trend, key=lambda r: r["mom12"], reverse=True)
+    top = [] if risk_off else rows[:TOP_N]
     for k, r in enumerate(top, 1):
         r["rank"] = k
         r["score"] = k                       # for the scorecard log
         notes = []
-        if not r["above200"]:
-            r["warning"] = ("Already below its 200-day average: the safety exit "
-                            "would sell it, so many traders skip it.")
-        elif not r["above50"]:
-            notes.append("below its 50-day average: momentum is fading")
         if r["ret1m"] > 20:
             notes.append(f"up {r['ret1m']:.0f}% in the last month: stretched, consider waiting for a pullback")
         r["notes"] = notes
         # simple exit guide: a close below the 200-day ends the trend
-        r["exit"] = (f"Hold about 3 months and re-check monthly (the tested rule). "
-                     f"Extra safety, not in the backtest: sell on a close below the "
-                     f"200-day average ({r['sma200']:.2f}).")
-    risk_off = None
-    if spy_closes and len(spy_closes) >= 200:
-        risk_off = spy_closes[-1] < sum(spy_closes[-200:]) / 200
-    return {"BUY": top, "risk_off": risk_off, "ranked": len(rows)}
+        r["exit"] = ("Hold about 3 months, re-check monthly (the tested rule). Sell "
+                     "early if the whole list turns to cash (SPY below its 200-day). "
+                     f"Extra safety, not in the backtest: a close below this stock's "
+                     f"200-day ({r['sma200']:.2f}).")
+    return {"BUY": top, "risk_off": risk_off, "ranked": len(rows),
+            "watch": rows[:TOP_N] if risk_off else []}
 
 
-# Backtest (study_position.py, S&P 500 + liquid small caps, 2024-03..2026-08)
+# study_position.py, point-in-time S&P 500, train 2024-03..2025-04,
+# test 2025-05..2026-08 (rule mom12_trend, hold 63, top 10)
 BACKTEST = {
-    "rule": "12-1 month momentum, top 10, hold ~3 months",
-    "test_period": "2025-06 to 2026-08",
-    "sp500_test": {"hit": 52.3, "avg_trade": 10.95, "year": 53.1, "maxdd": 6.9, "trades": 130},
-    "spy_year": 16.9,
-    "smallcap_test": {"hit": 43.1, "avg_trade": 0.57, "year": 1.8},
+    "rule": "12-1 momentum, S&P 500, uptrend only, cash when SPY < 200-day, top 10, hold ~3 months",
+    "train_period": "2024-03 to 2025-04",
+    "test_period": "2025-05 to 2026-08",
+    "train": {"hit": 62.3, "month_hit": 69.2, "avg_trade": 8.14, "year": 28.6, "maxdd": 4.1},
+    "test": {"hit": 56.7, "month_hit": 75.0, "avg_trade": 8.39, "year": 32.5, "maxdd": 6.7, "trades": 120},
+    "spy_year_test": 16.9,
 }

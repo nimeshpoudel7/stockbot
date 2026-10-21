@@ -31,14 +31,22 @@ class TestMomentum(unittest.TestCase):
         self.assertIsNone(momentum.row("SHORT", _trend(100, n=200)))
         self.assertIsNone(momentum.row("PENNY", make_bars([2.0] * 300)))
 
-    def test_build_ranks_and_flags(self):
+    def test_build_ranks_uptrends_only(self):
         rows = [momentum.row(s, _trend(p, last_month_pct=lm))
-                for s, p, lm in (("A", 120, 25), ("B", 60, 1), ("C", 10, 1))]
-        out = momentum.build(rows, [100.0] * 199 + [90.0])
+                for s, p, lm in (("A", 120, 25), ("B", 60, 1), ("C", 10, 1),
+                                 ("DOWN", 80, -45))]
+        out = momentum.build(rows, [100.0] * 200)
         self.assertEqual([r["symbol"] for r in out["BUY"]], ["A", "B", "C"])
         self.assertTrue(any("stretched" in n for n in out["BUY"][0]["notes"]))
-        self.assertTrue(out["risk_off"])
+        self.assertFalse(out["risk_off"])
         self.assertIn("3 months", out["BUY"][0]["exit"])
+
+    def test_cash_when_spy_below_200_day(self):
+        rows = [momentum.row("A", _trend(120))]
+        out = momentum.build(rows, [100.0] * 199 + [90.0])
+        self.assertTrue(out["risk_off"])
+        self.assertEqual(out["BUY"], [])
+        self.assertEqual([r["symbol"] for r in out["watch"]], ["A"])
 
     def test_scorecard_dedupes_a_held_position(self):
         store = Store(":memory:")
@@ -90,9 +98,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestMomentumWarnings(unittest.TestCase):
-    def test_below_200_flagged_and_duplicates_collapsed(self):
-        down = momentum.row("D", _trend(60, last_month_pct=-45))
-        out = momentum.build([down, dict(down)], None)
-        self.assertEqual(len(out["BUY"]), 1)
-        self.assertIn("200-day", out["BUY"][0]["warning"])
+class TestMomentumDedupe(unittest.TestCase):
+    def test_duplicates_collapsed(self):
+        r = momentum.row("D", _trend(60))
+        self.assertEqual(len(momentum.build([r, dict(r)], None)["BUY"]), 1)

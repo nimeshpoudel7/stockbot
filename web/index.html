@@ -438,7 +438,7 @@ const sinceOf = c => { const q = LIVEP[c.symbol]; return q && q.price != null &&
 function baseRows() {
   const m = SCAN.morning, w = SCAN.watch, t = SCAN.top10;
   if (pickTab === 'live') return ((w && w.entries) || []).map((c, i) => Object.assign({_i: i}, c));
-  if (pickTab === 'pos') return ((SCAN.position && SCAN.position.BUY) || []).map(c => Object.assign({}, c, {side: 'BUY', score: c.mom12, rank_: c.rank}));
+  if (pickTab === 'pos') return ((SCAN.position && (SCAN.position.risk_off ? SCAN.position.watch : SCAN.position.BUY)) || []).map(c => Object.assign({}, c, {side: 'BUY', score: c.mom12, rank_: c.rank}));
   if (pickTab === 'trend') { const k = PREFS.dir === 'down' ? 'SELL' : 'BUY'; return t ? (t[k] || []).concat((t[k + '_near'] || []).map(c => Object.assign({near: true}, c))) : []; }
   const all = pickTab === 'buys' ? ((m && m.buys) || []) : ((m && m.sells) || []);
   const top = all.filter(c => c.top_pick);
@@ -537,10 +537,13 @@ function posRow(c) {
 }
 function posNote(P) {
   const B = P && P.backtest, SC = SCAN.position_scorecard, L = SC && SC.BUY;
-  const t = B && B.sp500_test;
-  let html = `<p><b>Momentum leaders, for 1–3 month holds.</b> The S&amp;P 500 stocks that rose most over the past 12 months (skipping the latest month), refreshed every morning. Hold about 3 months, rebalance monthly, and spread money evenly across the list. This is the most researched long-term stock edge, but it crashes in sharp market reversals.</p>`;
-  if (P && P.risk_off) html += `<p class="warn-line"><b>Caution:</b> SPY is below its 200-day average. Momentum has its worst losses in markets like this; many traders hold cash until SPY recovers.</p>`;
-  if (t) html += `<p><b>Backtest</b> (${esc(B.test_period)}, not used to choose the rule): ${t.hit.toFixed(0)}% of trades ended up, average ${fmtPct(t.avg_trade, 1)} per 3-month trade, about ${fmtPct(t.year, 0)} a year vs ${fmtPct(B.spy_year, 0)} for SPY, worst dip ${t.maxdd.toFixed(0)}%. <b>Reality check:</b> the test uses today's S&amp;P members, so stocks that rose into the index are included and the result is flattered; on small caps the same rule made only ${fmtPct(B.smallcap_test.year, 0)} a year. Most of the profit comes from a few big winners, so the hit rate stays near 50%.</p>`;
+  let html = `<p><b>Momentum leaders, for 1–3 month holds.</b> S&amp;P 500 stocks in an uptrend with the biggest 12-month gains (skipping the latest month). Hold about 3 months, re-check monthly, and put equal money in each. The whole list goes to cash while SPY is below its 200-day average, because that is when momentum crashes.</p>`;
+  if (P && P.risk_off) html += `<p class="warn-line"><b>Cash mode:</b> SPY is below its 200-day average, so the rule holds no stocks right now. The names below are what it would buy once SPY recovers.</p>`;
+  if (B && B.test) {
+    const t = B.test, r = B.train;
+    html += `<p><b>Backtest</b> (S&amp;P 500, each stock counted only after it joined the index). Test ${esc(B.test_period)}: <b>${t.hit.toFixed(0)}%</b> of 3-month trades ended up, the portfolio was up in <b>${t.month_hit.toFixed(0)}%</b> of monthly batches, average ${fmtPct(t.avg_trade, 1)} per trade, about <b>${fmtPct(t.year, 0)} a year</b> vs ${fmtPct(B.spy_year_test, 0)} for SPY, worst dip ${t.maxdd.toFixed(0)}%. Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</p>
+      <p><b>Reality check:</b> this is only ~2.5 years, mostly a rising market led by a few big themes; stocks removed from the index are missing; and momentum has had years far worse than this. Expect it to beat SPY by much less than shown, with deeper drops in bad years.</p>`;
+  }
   html += L && L.n21 ? `<p><b>Live scorecard:</b> up after 1 month ${L.hit21.toFixed(0)}% of ${L.n21} picks${L.n63 ? `, after 3 months ${L.hit63.toFixed(0)}% of ${L.n63}` : ''}.</p>`
     : '<p><b>Live scorecard:</b> each new entry is logged and checked 1 and 3 months later.</p>';
   return `<li class="trend-note">${html}</li>`;
