@@ -53,8 +53,11 @@ BACKTEST = {
     "spy_year_test": 16.9,
     "periods": [["2024-03 to 2024-10", 74.3, 53.3], ["2024-10 to 2025-04", 60.0, 32.2],
                 ["2025-05 to 2025-12", 65.7, 37.3], ["2025-12 to 2026-08", 52.0, 55.1]],
-    "expect": "Realistic: roughly +20% to +35% a year in normal markets, with bigger swings "
-              "than Moderate risk; losing years (-15% to -30%) are possible.",
+    # study_long.py: the same rule replayed over ~10 years with point-in-time
+    # S&P membership incl. later-removed stocks (169 delisted tickers had no
+    # price history, so some bias remains). Before 2024-03 = never seen.
+    "long": {'years': '2016-10 to 2026-07', 'trades': 480, 'hit': 56.7, 'year': 15.1, 'spy_year': 15.5, 'maxdd': 28.4, 'unseen': {'period': '2016-10 to 2024-02', 'hit': 56.9, 'year': 9.9, 'spy_year': 14.5}, 'bad_years': '2018: -20.6% (SPY +3.3%); 2022: mostly cash, -3.4% (SPY -7.8%)'},
+    "expect": 'Over 10 years the same rule roughly matched SPY (about +15% a year vs +15.5%) with deeper drops (worst about -28%), lagged it in 2016-2023 and beat it in 2024-2026. Not a reliable way to beat the index.',
 }
 
 

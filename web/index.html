@@ -167,6 +167,7 @@ details.more[open] summary{margin-bottom:14px}
 .mod-stats .kv{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line-soft);padding-bottom:6px}
 .mod-stats .kv b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 .mod-stats .note{font-size:.82rem;color:var(--mute)}
+.mod-long{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding-top:12px;border-top:2px solid var(--line)}
 .mod-row{display:grid;grid-template-columns:118px minmax(0,1fr) auto;gap:6px 18px;padding:14px 18px;border-bottom:1px solid var(--line-soft);text-decoration:none;color:inherit}
 .mod-row:hover{background:var(--panel-2)}
 .mod-row .rank{font-size:.78rem;color:var(--mute)}
@@ -1008,7 +1009,12 @@ function renderModerate() {
       + kv('Average per 3-month trade', fmtPct(t.avg_trade, 1)) + kv('Per year', fmtPct(t.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.spy_year_test, 0)})</span>`)
       + kv('Worst drop', '−' + t.maxdd.toFixed(0) + '%')
       + `<div class="note">Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</div>`
-      + `<div class="note"><b>${esc(B.expect)}</b> The test is short (about 2.5 years, mostly a rising market) and stocks removed from the index are missing. Not financial advice.</div>`;
+      + (B.long ? `<div class="mod-long"><div class="note"><b>10-year check</b> (${esc(B.long.years)}, ${B.long.trades} trades, including the 2018, 2020 and 2022 sell-offs)</div>`
+          + kv('Trades that ended up', B.long.hit.toFixed(0) + '%')
+          + kv('Per year', fmtPct(B.long.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.long.spy_year, 0)})</span>`)
+          + kv('Worst drop', '−' + B.long.maxdd.toFixed(0) + '%')
+          + `<div class="note">Never-seen years ${esc(B.long.unseen.period)}: ${fmtPct(B.long.unseen.year, 0)} a year vs SPY ${fmtPct(B.long.unseen.spy_year, 0)}. Bad years: ${esc(B.long.bad_years)}.</div></div>` : '')
+      + `<div class="note"><b>${esc(B.expect)}</b> The short test above was the period the rule was picked on; the 10-year check is the fairer number. Not financial advice.</div>`;
   }
   const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   $('modCard').innerHTML = SC && SC.picks
@@ -1062,7 +1068,12 @@ function renderConviction() {
       + (B.moderate_test ? `<div class="note">Moderate risk on the same test: ${B.moderate_test.hit.toFixed(0)}% of trades up, ${fmtPct(B.moderate_test.year, 0)} a year.</div>` : '')
       + (B.periods ? `<div class="note">By period (trades up · per year): ${B.periods.map(x => `${esc(x[0])}: ${x[1].toFixed(0)}% · ${fmtPct(x[2], 0)}`).join('; ')}.</div>` : '')
       + `<div class="note">Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</div>`
-      + `<div class="note"><b>${esc(B.expect)}</b> The test is short (about 2.5 years, mostly a rising market) and stocks removed from the index are missing. Not financial advice.</div>`;
+      + (B.long ? `<div class="mod-long"><div class="note"><b>10-year check</b> (${esc(B.long.years)}, ${B.long.trades} trades, including the 2018, 2020 and 2022 sell-offs)</div>`
+          + kv('Trades that ended up', B.long.hit.toFixed(0) + '%')
+          + kv('Per year', fmtPct(B.long.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.long.spy_year, 0)})</span>`)
+          + kv('Worst drop', '−' + B.long.maxdd.toFixed(0) + '%')
+          + `<div class="note">Never-seen years ${esc(B.long.unseen.period)}: ${fmtPct(B.long.unseen.year, 0)} a year vs SPY ${fmtPct(B.long.unseen.spy_year, 0)}. Bad years: ${esc(B.long.bad_years)}.</div></div>` : '')
+      + `<div class="note"><b>${esc(B.expect)}</b> The short test above was the period the rule was picked on; the 10-year check is the fairer number. Not financial advice.</div>`;
   }
   const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   $('convCard').innerHTML = SC && SC.picks
