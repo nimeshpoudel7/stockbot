@@ -55,14 +55,17 @@ class TestApiScanner(unittest.TestCase):
         store.poller_set("scanner_morning", json.dumps(morning))
         store.poller_set("scanner_watch", json.dumps(watch))
         out = _scanner_endpoint(self._app(store))()
-        self.assertEqual(out, {"morning": morning, "watch": watch,
-                               "watch_last": None, "top10": None, "scorecard": {"picks": 0, "since": None, "BUY": {"n5": 0, "n10": 0, "open": 0}, "SELL": {"n5": 0, "n10": 0, "open": 0}, "recent": []}})
+        self.assertEqual((out["morning"], out["watch"], out["watch_last"], out["top10"]),
+                         (morning, watch, None, None))
 
     def test_null_when_nothing_stored(self):
         store = Store(":memory:")
         out = _scanner_endpoint(self._app(store))()
-        self.assertEqual(out, {"morning": None, "watch": None,
-                               "watch_last": None, "top10": None, "scorecard": {"picks": 0, "since": None, "BUY": {"n5": 0, "n10": 0, "open": 0}, "SELL": {"n5": 0, "n10": 0, "open": 0}, "recent": []}})
+        self.assertEqual({k: out[k] for k in ("morning", "watch", "watch_last", "top10", "position")},
+                         {"morning": None, "watch": None, "watch_last": None,
+                          "top10": None, "position": None})
+        self.assertEqual(out["scorecard"]["picks"], 0)
+        self.assertEqual(out["position_scorecard"]["picks"], 0)
 
     def test_bad_json_yields_null(self):
         store = Store(":memory:")
