@@ -574,6 +574,21 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
                 "scorecard": _scorecard()}
 
 
+    # ---- moderate-risk strategy (separate page/tab) ------------------------
+    @app.get("/api/moderate")
+    def api_moderate():
+        import moderate
+        raw = store.poller_get(moderate.LIST_KEY)
+        try:
+            data = json.loads(raw) if raw else None
+        except (ValueError, TypeError):
+            data = None
+        try:
+            card = moderate.summary(store)
+        except Exception:  # noqa: BLE001
+            card = None
+        return {"list": data, "scorecard": card, "backtest": moderate.BACKTEST}
+
     # ---- stock detail ----------------------------------------------------
     PROFILE_TTL_SECS = 24 * 3600   # company profile: one Finnhub call/day
 

@@ -157,6 +157,26 @@ details.more[open] summary{margin-bottom:14px}
 .prob{display:flex;align-items:center;gap:8px}
 .prob .bar{width:90px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .prob .bar i{display:block;height:100%;background:var(--amber)}
+/* ---- Moderate risk --------------------------------------------------- */
+.mod-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start;margin-top:20px}
+@media (max-width:1020px){.mod-grid{grid-template-columns:minmax(0,1fr)}}
+.mod-side{display:flex;flex-direction:column;gap:20px}
+.mod-banner{margin:0 18px 14px;padding:12px 14px;border-radius:var(--radius);background:var(--amber-soft);color:var(--ink);font-size:.9rem}
+.mod-rules{margin:0;padding:0 18px 18px 38px;display:flex;flex-direction:column;gap:8px;font-size:.9rem;color:var(--ink-2)}
+.mod-stats{padding:0 18px 18px;font-size:.9rem;color:var(--ink-2);display:flex;flex-direction:column;gap:10px}
+.mod-stats .kv{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line-soft);padding-bottom:6px}
+.mod-stats .kv b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.mod-stats .note{font-size:.82rem;color:var(--mute)}
+.mod-row{display:grid;grid-template-columns:118px minmax(0,1fr) auto;gap:6px 18px;padding:14px 18px;border-bottom:1px solid var(--line-soft);text-decoration:none;color:inherit}
+.mod-row:hover{background:var(--panel-2)}
+.mod-row .rank{font-size:.78rem;color:var(--mute)}
+.mod-row .facts{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.86rem;color:var(--ink-2)}
+.mod-row .facts b{color:var(--ink);font-weight:600}
+.mod-row .exit{font-size:.8rem;color:var(--mute);grid-column:2 / -1}
+.mod-row .px{text-align:right}
+.mod-row .warn-line{font-size:.82rem;color:var(--amber-text);margin-top:4px}
+@media (max-width:760px){.mod-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"sym px" "main main" "exit exit";padding:14px}
+  .mod-row .sym{grid-area:sym}.mod-row .px{grid-area:px}.mod-row .main{grid-area:main}.mod-row .exit{grid-area:exit}}
 </style>
 </head>
 <body>
@@ -170,6 +190,7 @@ details.more[open] summary{margin-bottom:14px}
       <button class="tab" role="tab" data-view="today" aria-selected="true">Today</button>
       <button class="tab" role="tab" data-view="alerts" aria-selected="false">Alerts</button>
       <button class="tab" role="tab" data-view="research" aria-selected="false">Research</button>
+      <button class="tab" role="tab" data-view="moderate" aria-selected="false">Moderate risk</button>
     </nav>
     <span class="spacer"></span>
     <span class="mood" id="mood" data-regime=""><span class="mood-dot"></span><span class="mood-text">Market: checking…</span></span>
@@ -321,12 +342,50 @@ details.more[open] summary{margin-bottom:14px}
     </div>
   </div>
 </section>
+
+<!-- ================= MODERATE RISK ================= -->
+<section id="view-moderate" data-view-panel="moderate" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>Moderate risk</h1>
+      <p class="mute">A separate, slower strategy: the strongest S&amp;P 500 stocks of the past year, held about 3 months. It does not change the Today picks or your alerts.</p>
+    </div>
+    <span class="mute small" id="modWhen"></span>
+  </div>
+  <div class="mod-grid">
+    <div class="panel">
+      <div class="panel-h"><h2>Current picks</h2><span class="mute small" id="modCount"></span></div>
+      <div class="mod-banner" id="modBanner" hidden></div>
+      <ul class="pick-list" id="modList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
+    </div>
+    <aside class="mod-side">
+      <div class="panel">
+        <div class="panel-h"><h2>The rules</h2></div>
+        <ol class="mod-rules">
+          <li>Only S&amp;P 500 stocks above their 50- and 200-day averages.</li>
+          <li>Rank by the 12-month gain, skipping the latest month. Take the top 10.</li>
+          <li>Put equal money in each. Hold about 3 months, re-check once a month.</li>
+          <li>Go to cash while SPY is below its 200-day average.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Backtest</h2></div>
+        <div class="mod-stats" id="modBacktest"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Live scorecard</h2></div>
+        <div class="mod-stats" id="modCard"></div>
+      </div>
+    </aside>
+  </div>
+</section>
 </main>
 
 <nav class="bottomnav" role="tablist" aria-label="Sections">
   <button class="tab" role="tab" data-view="today" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Today</button>
   <button class="tab" role="tab" data-view="alerts" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Alerts</button>
   <button class="tab" role="tab" data-view="research" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-3 3 2 5-6"/></svg>Research</button>
+  <button class="tab" role="tab" data-view="moderate" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>Moderate</button>
 </nav>
 
 <script>
@@ -334,13 +393,14 @@ details.more[open] summary{margin-bottom:14px}
 
 // ------------------------------------------------------------------ views
 let BOOTED = false;
-const VIEWS = ['today', 'alerts', 'research'];
+const VIEWS = ['today', 'alerts', 'research', 'moderate'];
 function showView(v, push) {
   if (!VIEWS.includes(v)) v = 'today';
   document.querySelectorAll('[data-view-panel]').forEach(p => p.hidden = p.dataset.viewPanel !== v);
   document.querySelectorAll('.tab[data-view]').forEach(t => t.setAttribute('aria-selected', t.dataset.view === v));
   if (push) history.replaceState(null, '', '#' + v + (location.search ? '' : ''));
   if (v === 'research' && BOOTED) loadResearch();
+  if (v === 'moderate' && BOOTED) loadModerate();
   if (v === 'today' && CH) setTimeout(() => CH.chart.timeScale().fitContent(), 0);
   window.scrollTo({top: 0});
 }
@@ -868,6 +928,57 @@ function renderBacktest(r) {
   }).join('') || '<tr><td colspan="5" class="mute">No results.</td></tr>';
 }
 
+// ------------------------------------------------------------------ moderate risk
+let MOD = null, MODP = {};
+async function loadModerate() {
+  try { MOD = await api('GET', '/api/moderate'); } catch (e) { $('modList').innerHTML = `<li class="empty"><b>Could not load</b>${esc(e.message)}</li>`; return; }
+  renderModerate(); refreshModPrices();
+}
+async function refreshModPrices() {
+  const L = MOD && MOD.list, rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  if (!rows.length || $('view-moderate').hidden || document.hidden) return;
+  try { MODP = await api('GET', '/api/prices?symbols=' + rows.map(r => r.symbol).join(',')); } catch (e) { return; }
+  renderModerate();
+}
+function renderModerate() {
+  const L = MOD && MOD.list, B = MOD && MOD.backtest, SC = MOD && MOD.scorecard;
+  $('modWhen').textContent = L && L.ts ? `Updated with the morning scan · ${etTime(L.ts, {weekday: 'short', month: 'short', day: 'numeric'})}` : '';
+  const rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  $('modCount').textContent = L ? (L.risk_off ? 'Cash mode' : `${rows.length} stocks · equal money in each`) : '';
+  const ban = $('modBanner');
+  ban.hidden = !(L && L.risk_off);
+  ban.innerHTML = '<b>Cash mode.</b> SPY is below its 200-day average, so the rule holds no stocks. These are the names it would buy once SPY recovers.';
+  $('modList').innerHTML = !L
+    ? '<li class="empty"><b>No list yet</b>It is built by the 8:00 AM ET scan on trading days.</li>'
+    : rows.length ? rows.map(r => {
+        const q = MODP[r.symbol], px = q && q.price != null ? q.price : r.price, dp = q ? q.day_pct : null;
+        const since = r.price ? (px - r.price) / r.price * 100 : null;
+        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}">
+          <div class="sym"><span class="tick" style="font-size:1.2rem">${esc(r.symbol)}</span><div class="rank">#${r.rank} of 10</div></div>
+          <div class="main"><div class="facts"><span>12-month <b>${fmtPct(r.mom12, 0)}</b></span><span>last month ${fmtPct(r.ret1m, 1)}</span><span>${r.from_high >= -1 ? 'at its 52-week high' : fmtPct(r.from_high, 0) + ' from its high'}</span></div>
+            ${(r.notes || []).map(n => `<div class="warn-line">${esc(n)}</div>`).join('')}</div>
+          <div class="px"><b class="num">${fmtP(px)}</b>${dp != null ? `<div class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</div>` : ''}${since != null && q ? `<div class="mute small">${fmtPct(since, 1)} since list</div>` : ''}</div>
+          <div class="exit">Safety exit (not in the backtest): a close below the 200-day, ${fmtP(r.sma200)}.</div>
+        </a></li>`;
+      }).join('')
+    : '<li class="empty"><b>No stock qualifies today</b>None of the S&amp;P 500 passed the uptrend rule.</li>';
+  if (B) {
+    const t = B.test, r = B.train, kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    $('modBacktest').innerHTML = `<div class="note">Unseen test period ${esc(B.test_period)}</div>`
+      + kv('Trades that ended up', t.hit.toFixed(0) + '%') + kv('Monthly batches up', t.month_hit.toFixed(0) + '%')
+      + kv('Average per 3-month trade', fmtPct(t.avg_trade, 1)) + kv('Per year', fmtPct(t.year, 0) + ` <span class="mute">(SPY ${fmtPct(B.spy_year_test, 0)})</span>`)
+      + kv('Worst drop', '−' + t.maxdd.toFixed(0) + '%')
+      + `<div class="note">Earlier period ${esc(B.train_period)}: ${r.hit.toFixed(0)}% of trades up, ${fmtPct(r.year, 0)} a year.</div>`
+      + `<div class="note"><b>${esc(B.expect)}</b> The test is short (about 2.5 years, mostly a rising market) and stocks removed from the index are missing. Not financial advice.</div>`;
+  }
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  $('modCard').innerHTML = SC && SC.picks
+    ? `<div class="note">Every new pick since ${esc(SC.since)} is logged at its price and checked later.</div>`
+      + kv('Picks logged', SC.picks) + kv('Up after 1 month', SC.n21 ? `${SC.hit21.toFixed(0)}% of ${SC.n21} (avg ${fmtPct(SC.avg21, 1)})` : 'waiting')
+      + kv('Up after 3 months', SC.n63 ? `${SC.hit63.toFixed(0)}% of ${SC.n63} (avg ${fmtPct(SC.avg63, 1)})` : 'waiting')
+    : '<div class="note">Starts with the first morning scan: each pick is logged and checked 1 and 3 months later.</div>';
+}
+
 // ------------------------------------------------------------------ boot
 initTheme('themeBtn', () => { if (CH) CH.theme(); });
 (async function init() {
@@ -879,6 +990,8 @@ initTheme('themeBtn', () => { if (CH) CH.theme(); });
   loadAlerts(); loadScanner(); loadRegime(); refreshQuotes();
   setInterval(refreshPickPrices, 15000);
   if (!$('view-research').hidden) loadResearch();
+  if (!$('view-moderate').hidden) loadModerate();
+  setInterval(refreshModPrices, 15000);
   setInterval(refreshQuotes, 2000);
   setInterval(loadScanner, 60000);
   setInterval(loadRegime, 600000);

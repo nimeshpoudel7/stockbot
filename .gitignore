@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 logs/
 .pytest_cache/
+data/study_cache/
