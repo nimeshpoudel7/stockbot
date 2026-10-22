@@ -1826,6 +1826,9 @@ def run_scan(store: Store | None = None, rest: AlpacaREST | None = None,
         # separate 'Leaders 3 months' strategy (own list; never raises)
         import leaders3m
         leaders3m.run(store, rest, spy)
+        # separate 'Cheap leaders (under $50)' strategy (own list; never raises)
+        import cheap50
+        cheap50.run(store, rest, spy)
     return {"buys": buys, "sells": sells}
 
 
