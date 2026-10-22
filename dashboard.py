@@ -664,6 +664,36 @@ def create_app(store, engine, market, actions, dashboard_token: str = "",
             raise HTTPException(400, "invalid symbol")
         return {"plan": moderate.plan(store, symbol)}
 
+    # ---- Cheap leaders (under $50) strategy (separate page/tab) ------------------------
+    @app.get("/api/cheap50")
+    def api_cheap50():
+        import cheap50 as moderate
+        raw = store.poller_get(moderate.LIST_KEY)
+        try:
+            data = json.loads(raw) if raw else None
+        except (ValueError, TypeError):
+            data = None
+        try:
+            card = moderate.summary(store)
+        except Exception:  # noqa: BLE001
+            card = None
+        if data:
+            for r in (data.get("picks") or []) + (data.get("watch") or []):
+                try:
+                    pl = moderate.plan(store, r["symbol"]) or {}
+                except Exception:  # noqa: BLE001
+                    pl = {}
+                r.update({k: pl.get(k) for k in ("listed_on", "entry_price", "sell_by",
+                                                  "days_left", "action", "price_guide")})
+        return {"list": data, "scorecard": card, "backtest": moderate.BACKTEST}
+
+    @app.get("/api/cheap50/{symbol}")
+    def api_cheap50_plan(symbol: str):
+        import cheap50 as moderate
+        if not symbol.isalpha() or len(symbol) > 6:
+            raise HTTPException(400, "invalid symbol")
+        return {"plan": moderate.plan(store, symbol)}
+
     # ---- stock detail ----------------------------------------------------
     PROFILE_TTL_SECS = 24 * 3600   # company profile: one Finnhub call/day
 

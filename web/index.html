@@ -195,6 +195,7 @@ details.more[open] summary{margin-bottom:14px}
       <button class="tab" role="tab" data-view="moderate" aria-selected="false">Moderate risk</button>
       <button class="tab" role="tab" data-view="conviction" aria-selected="false">High conviction</button>
       <button class="tab" role="tab" data-view="leaders" aria-selected="false">Leaders 3 months</button>
+      <button class="tab" role="tab" data-view="cheap" aria-selected="false">Under $50</button>
     </nav>
     <span class="spacer"></span>
     <span class="mood" id="mood" data-regime=""><span class="mood-dot"></span><span class="mood-text">Market: checking…</span></span>
@@ -455,6 +456,42 @@ details.more[open] summary{margin-bottom:14px}
     </aside>
   </div>
 </section>
+<!-- ================= UNDER $50 ================= -->
+<section id="view-cheap" data-view-panel="cheap" hidden>
+  <div class="view-h">
+    <div class="titles">
+      <h1>Cheap leaders (under $50)</h1>
+      <p class="mute">The 5 strongest S&amp;P 500 stocks with a share price under $50, held about 3 months. It made money over 10 years, but the 2022–2026 check was only a little better than SPY, with bigger swings. It does not change any other tab.</p>
+    </div>
+    <span class="mute small" id="cheapWhen"></span>
+  </div>
+  <div class="mod-grid">
+    <div class="panel">
+      <div class="panel-h"><h2>Current picks</h2><span class="mute small" id="cheapCount"></span></div>
+      <div class="mod-banner" id="cheapBanner" hidden></div>
+      <ul class="pick-list" id="cheapList"><li class="empty"><div class="skeleton" style="max-width:420px;margin:0 auto"></div></li></ul>
+    </div>
+    <aside class="mod-side">
+      <div class="panel">
+        <div class="panel-h"><h2>The rules</h2></div>
+        <ol class="mod-rules">
+          <li>Only S&amp;P 500 stocks with a share price from $3 to $50.</li>
+          <li>Rank by the gain over the last 6 months, skipping the latest month. Take the top 5.</li>
+          <li>Once a month, buy that month's new names with equal money. Hold each about 3 months.</li>
+          <li>No trend filter and no cash rule: both did worse for cheap stocks in testing.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Backtest</h2></div>
+        <div class="mod-stats" id="cheapBacktest"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Live scorecard</h2></div>
+        <div class="mod-stats" id="cheapCard"></div>
+      </div>
+    </aside>
+  </div>
+</section>
 </main>
 
 <nav class="bottomnav" role="tablist" aria-label="Sections">
@@ -464,6 +501,7 @@ details.more[open] summary{margin-bottom:14px}
   <button class="tab" role="tab" data-view="moderate" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>Moderate</button>
   <button class="tab" role="tab" data-view="conviction" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>Conviction</button>
   <button class="tab" role="tab" data-view="leaders" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4V10H4zM10 20h4V4h-4zM16 20h4v-7h-4z"/></svg>Leaders</button>
+  <button class="tab" role="tab" data-view="cheap" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>Cheap</button>
 </nav>
 
 <script>
@@ -471,7 +509,7 @@ details.more[open] summary{margin-bottom:14px}
 
 // ------------------------------------------------------------------ views
 let BOOTED = false;
-const VIEWS = ['today', 'alerts', 'research', 'moderate', 'conviction', 'leaders'];
+const VIEWS = ['today', 'alerts', 'research', 'moderate', 'conviction', 'leaders', 'cheap'];
 function showView(v, push) {
   if (!VIEWS.includes(v)) v = 'today';
   document.querySelectorAll('[data-view-panel]').forEach(p => p.hidden = p.dataset.viewPanel !== v);
@@ -481,6 +519,7 @@ function showView(v, push) {
   if (v === 'moderate' && BOOTED) loadModerate();
   if (v === 'conviction' && BOOTED) loadConviction();
   if (v === 'leaders' && BOOTED) loadLeaders();
+  if (v === 'cheap' && BOOTED) loadCheap();
   if (v === 'today' && CH) setTimeout(() => CH.chart.timeScale().fitContent(), 0);
   window.scrollTo({top: 0});
 }
@@ -1177,6 +1216,60 @@ function renderLeaders() {
     : '<div class="note">Starts with the first morning scan: each pick is logged and checked 1 and 3 months later.</div>';
 }
 
+// ------------------------------------------------------------------ under $50
+let CHEAP = null, CHEAPP = {};
+async function loadCheap() {
+  try { CHEAP = await api('GET', '/api/cheap50'); } catch (e) { $('cheapList').innerHTML = `<li class="empty"><b>Could not load</b>${esc(e.message)}</li>`; return; }
+  renderCheap(); refreshCheapPrices();
+}
+async function refreshCheapPrices() {
+  const L = CHEAP && CHEAP.list, rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  if (!rows.length || $('view-cheap').hidden || document.hidden) return;
+  try { CHEAPP = await api('GET', '/api/prices?symbols=' + rows.map(r => r.symbol).join(',')); } catch (e) { return; }
+  renderCheap();
+}
+function renderCheap() {
+  const L = CHEAP && CHEAP.list, B = CHEAP && CHEAP.backtest, SC = CHEAP && CHEAP.scorecard;
+  $('cheapWhen').textContent = L && L.ts ? `Updated with the morning scan · ${etTime(L.ts, {weekday: 'short', month: 'short', day: 'numeric'})}` : '';
+  const rows = L ? (L.risk_off ? L.watch : L.picks) || [] : [];
+  $('cheapCount').textContent = L ? (L.risk_off ? 'Cash mode' : `${rows.length} stocks · equal money in each (one fifth of each monthly batch)`) : '';
+  const ban = $('cheapBanner');
+  ban.hidden = !(L && L.risk_off);
+  ban.innerHTML = '<b>Cash mode.</b> SPY is below its 200-day average, so the rule holds no stocks. These are the names it would buy once SPY recovers.';
+  $('cheapList').innerHTML = !L
+    ? '<li class="empty"><b>No list yet</b>It is built by the 8:00 AM ET scan on trading days.</li>'
+    : rows.length ? rows.map(r => {
+        const q = CHEAPP[r.symbol], px = q && q.price != null ? q.price : r.price, dp = q ? q.day_pct : null;
+        const since = r.price ? (px - r.price) / r.price * 100 : null;
+        return `<li><a class="mod-row" href="${stockUrl(r.symbol)}&from=cheap">
+          <div class="sym"><span class="tick" style="font-size:1.2rem">${esc(r.symbol)}</span><div class="rank">#${r.rank} of 5</div></div>
+          <div class="main"><div class="facts"><span>6-month <b>${fmtPct(r.mom6, 0)}</b></span><span>12-month ${fmtPct(r.mom12, 0)}</span><span>last month ${fmtPct(r.ret1m, 1)}</span><span>${r.from_high >= -1 ? 'at its 52-week high' : fmtPct(r.from_high, 0) + ' from its high'}</span></div>
+            ${(r.notes || []).map(n => `<div class="warn-line">${esc(n)}</div>`).join('')}</div>
+          <div class="px"><b class="num">${fmtP(px)}</b>${dp != null ? `<div class="chg ${dp >= 0 ? 'up' : 'down'}">${fmtPct(dp, 2)} today</div>` : ''}${since != null && q ? `<div class="mute small">${fmtPct(since, 1)} since list</div>` : ''}</div>
+          <div class="exit">${r.sell_by ? `<b>${r.action === 'buy' ? 'Buy at market now' : 'Holding since ' + esc(r.listed_on)}</b> · <b>sell</b> ~${esc(r.sell_by)}${r.price_guide ? ` · typical price then ${fmtP((r.action === 'buy' ? px : r.entry_price) * (r.price_guide.p25 / r.entry_price))}–${fmtP((r.action === 'buy' ? px : r.entry_price) * (r.price_guide.p75 / r.entry_price))}` : ''} · ` : ''}safety exit below ${fmtP(r.sma200)}. Tap for the full plan.</div>
+        </a></li>`;
+      }).join('')
+    : '<li class="empty"><b>No stock qualifies today</b>No S&amp;P 500 stock under $50 qualifies right now.</li>';
+  if (B && B.long) {
+    const L = B.long, kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    $('cheapBacktest').innerHTML = `<div class="note">10 years, ${esc(L.years)}, ${L.trades.toLocaleString('en-US')} trades, real S&amp;P 500 members on each date</div>`
+      + kv('Trades that ended up', L.hit.toFixed(0) + '%') + kv('Monthly batches up', L.batch_hit.toFixed(0) + '%')
+      + kv('Average per 3-month trade', fmtPct(L.avg_trade, 1))
+      + kv('Per year', fmtPct(L.year, 0) + ` <span class="mute">(SPY ${fmtPct(L.spy_year, 0)})</span>`)
+      + kv('Worst portfolio drop', '−' + L.maxdd.toFixed(0) + `% <span class="mute">(SPY −${L.spy_maxdd.toFixed(0)}%)</span>`)
+      + kv('Worst single trade', fmtPct(L.worst, 0)) + kv('Years beating SPY', esc(L.beat_years))
+      + `<div class="note">By year (rule vs SPY): ${B.by_year.map(y => `${y[0]} ${fmtPct(y[1], 0)} vs ${fmtPct(y[2], 0)}`).join(' · ')}</div>`
+      + `<div class="note"><b>Stress tests passed:</b> ${B.checks.map(esc).join('; ')}.</div>`
+      + `<div class="note"><b>${esc(B.expect)}</b> Not financial advice.</div>`;
+  }
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  $('cheapCard').innerHTML = SC && SC.picks
+    ? `<div class="note">Every new pick since ${esc(SC.since)} is logged at its price and checked later.</div>`
+      + kv('Picks logged', SC.picks) + kv('Up after 1 month', SC.n21 ? `${SC.hit21.toFixed(0)}% of ${SC.n21} (avg ${fmtPct(SC.avg21, 1)})` : 'waiting')
+      + kv('Up after 3 months', SC.n63 ? `${SC.hit63.toFixed(0)}% of ${SC.n63} (avg ${fmtPct(SC.avg63, 1)})` : 'waiting')
+    : '<div class="note">Starts with the first morning scan: each pick is logged and checked 1 and 3 months later.</div>';
+}
+
 // ------------------------------------------------------------------ boot
 initTheme('themeBtn', () => { if (CH) CH.theme(); });
 (async function init() {
@@ -1191,6 +1284,8 @@ initTheme('themeBtn', () => { if (CH) CH.theme(); });
   if (!$('view-moderate').hidden) loadModerate();
   if (!$('view-conviction').hidden) loadConviction();
   if (!$('view-leaders').hidden) loadLeaders();
+  if (!$('view-cheap').hidden) loadCheap();
+  setInterval(refreshCheapPrices, 15000);
   setInterval(refreshLeadPrices, 15000);
   setInterval(refreshConvPrices, 15000);
   setInterval(refreshModPrices, 15000);
